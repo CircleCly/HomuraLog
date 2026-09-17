@@ -17,6 +17,9 @@ var record = Record();
 var tree = new TimelineTree(record);
 var strikeA = new TimelineAction(TimelineActionKind.PlayCard, 1, "STRIKE", "3", 8);
 var strikeB = new TimelineAction(TimelineActionKind.PlayCard, 1, "STRIKE", "4", 8);
+var positionedStrike = strikeA with { HandPosition = 3 };
+Assert(positionedStrike.HandPosition == 3, "Played-card hand position should be retained.");
+Assert(positionedStrike.Key == strikeA.Key, "Display-only hand position must not split an existing instance branch.");
 tree.Append(strikeA, state, DateTimeOffset.UtcNow);
 tree.Append(new TimelineAction(TimelineActionKind.EndTurn, 1, "END_TURN"), state, DateTimeOffset.UtcNow);
 

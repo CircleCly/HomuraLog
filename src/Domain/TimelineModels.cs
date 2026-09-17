@@ -13,7 +13,8 @@ public sealed record TimelineAction(
     uint? TargetId = null,
     int? Slot = null,
     IReadOnlyList<string>? Choices = null,
-    bool Skipped = false)
+    bool Skipped = false,
+    int? HandPosition = null)
 {
     [JsonIgnore]
     public string Key => string.Join("|", Kind, Turn, Escape(SourceId), Escape(InstanceId),

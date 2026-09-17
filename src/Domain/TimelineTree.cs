@@ -32,6 +32,9 @@ public sealed class TimelineTree
         }
         else
         {
+            // Enrich records created before hand position was captured without changing
+            // their stable action key or creating a duplicate branch.
+            if (action.HandPosition.HasValue) node.Action = action;
             node.VisitCount++;
             node.LastVisitedAt = now;
             node.State = state;

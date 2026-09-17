@@ -4,6 +4,8 @@ namespace HomuraLog.UI;
 
 internal static class HomuraText
 {
+    public static string HandPosition(int position) => Chinese ? $"手牌第 {position} 张" : $"hand #{position} from left";
+
     private static bool Chinese => TranslationServer.GetLocale().StartsWith("zh", StringComparison.OrdinalIgnoreCase);
     public static string Title => Chinese ? "世界线记录" : "Timeline Log";
     public static string Hide => Chinese ? "收起" : "Collapse";

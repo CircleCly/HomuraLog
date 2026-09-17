@@ -11,6 +11,7 @@ using MegaCrit.Sts2.Core.Entities.Players;
 using MegaCrit.Sts2.Core.GameActions;
 using MegaCrit.Sts2.Core.GameActions.Multiplayer;
 using MegaCrit.Sts2.Core.Models;
+using MegaCrit.Sts2.Core.Nodes.Combat;
 using MegaCrit.Sts2.Core.Runs;
 using MegaCrit.Sts2.Core.Saves.Runs;
 
@@ -134,7 +135,15 @@ internal sealed class TimelineSession : IDisposable
                 CardModel? card = play.NetCombatCard.ToCardModelOrNull();
                 string instance = play.NetCombatCard.CombatCardIndex.ToString();
                 string source = card?.Id.Entry ?? play.CardModelId.Entry;
-                return new TimelineAction(TimelineActionKind.PlayCard, turn, source, instance, play.TargetId);
+                int handIndex = card == null ? -1 : NPlayerHand.Instance?.ActiveHolders
+                    .Select(holder => holder.CardNode?.Model).ToList()
+                    .FindIndex(candidate => ReferenceEquals(candidate, card)) ?? -1;
+                if (handIndex < 0 && card != null && player.PlayerCombatState != null)
+                    handIndex = player.PlayerCombatState.Hand.Cards.ToList()
+                        .FindIndex(candidate => ReferenceEquals(candidate, card));
+                int? handPosition = handIndex >= 0 ? handIndex + 1 : null;
+                return new TimelineAction(TimelineActionKind.PlayCard, turn, source, instance,
+                    play.TargetId, HandPosition: handPosition);
             case UsePotionAction potion when potion.WasEnqueuedInCombat:
                 string potionId = potion.Player.GetPotionAtSlotIndex((int)potion.PotionIndex)?.Id.Entry ?? "UNKNOWN_POTION";
                 return new TimelineAction(TimelineActionKind.UsePotion, turn, potionId,

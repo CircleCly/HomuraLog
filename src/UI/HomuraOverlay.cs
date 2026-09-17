@@ -248,7 +248,9 @@ internal sealed partial class HomuraOverlay : CanvasLayer
 
     internal static string ActionText(TimelineAction action) => action.Kind switch
     {
-        TimelineActionKind.PlayCard => $"T{action.Turn} {LocalizedModelNames.Card(action.SourceId)}" + (action.TargetId.HasValue ? $" → #{action.TargetId}" : ""),
+        TimelineActionKind.PlayCard => $"T{action.Turn} {LocalizedModelNames.Card(action.SourceId)}" +
+            (action.HandPosition.HasValue ? $" ({HomuraText.HandPosition(action.HandPosition.Value)})" : "") +
+            (action.TargetId.HasValue ? $" → #{action.TargetId}" : ""),
         TimelineActionKind.UsePotion => $"T{action.Turn} 🧪 {LocalizedModelNames.Potion(action.SourceId)}" + (action.TargetId.HasValue ? $" → #{action.TargetId}" : ""),
         TimelineActionKind.EndTurn => $"T{action.Turn} ⏭ {HomuraText.EndTurn}",
         TimelineActionKind.CardChoice => action.Skipped ? $"↳ {HomuraText.Skip}" : $"↳ {HomuraText.Choice} [{string.Join(", ", (action.Choices ?? []).Select(LocalizedModelNames.Choice))}]",

@@ -25,6 +25,7 @@ internal sealed class TimelineSession : IDisposable
     private readonly Dictionary<GameAction, PendingAction> _pending = new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<GameAction, List<TimelineAction>> _choices = new(ReferenceEqualityComparer.Instance);
     private bool _disposed;
+    private bool _suppressCommit;
 
     private sealed record PendingAction(GameAction Native, TimelineAction Action);
 
@@ -68,6 +69,17 @@ internal sealed class TimelineSession : IDisposable
         if (!_choices.TryGetValue(owner, out List<TimelineAction>? list))
             _choices[owner] = list = [];
         list.Add(choice);
+    }
+
+    internal IDisposable SuppressReplayCommits()
+    {
+        _suppressCommit = true;
+        return new ReplayCommitScope(this);
+    }
+
+    private sealed class ReplayCommitScope(TimelineSession session) : IDisposable
+    {
+        public void Dispose() => session._suppressCommit = false;
     }
 
     public static TimelineSession Start(CombatState combat)
@@ -236,6 +248,11 @@ internal sealed class TimelineSession : IDisposable
     {
         if (!_pending.Remove(action, out PendingAction? pending)) return;
         Detach(action);
+        if (_suppressCommit)
+        {
+            _choices.Remove(action);
+            return;
+        }
         DateTimeOffset now = DateTimeOffset.UtcNow;
         CombatStateSummary state = CombatIdentityBuilder.State(_combat);
         _tree.Append(pending.Action, state, now);

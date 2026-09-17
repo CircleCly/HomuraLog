@@ -101,6 +101,8 @@ internal static class WorldlineReplayController
 
     private static async Task ReplayAsync(TimelineSession session, ReplayRequest request)
     {
+        using IDisposable replayCommits = session.SuppressReplayCommits();
+        using IDisposable replaySpeed = new ReplaySpeedScope();
         try
         {
             TimelineAction[] executable = request.Path
@@ -126,6 +128,48 @@ internal static class WorldlineReplayController
         {
             Entry.Logger.Error($"Worldline replay stopped safely: {error}");
             Fail($"Replay stopped: {error.Message}");
+        }
+    }
+
+    /// Temporarily accelerates the Godot loop and silences SFX during deterministic replay.
+    /// Reflection keeps this optional across game builds; failure to find the audio method is harmless.
+    private sealed class ReplaySpeedScope : IDisposable
+    {
+        private readonly float _oldScale;
+        private readonly object? _audio;
+        private readonly System.Reflection.MethodInfo? _setSfx;
+        private readonly object? _oldSfx;
+
+        public ReplaySpeedScope()
+        {
+            _oldScale = (float)Engine.TimeScale;
+            Engine.TimeScale = 5.0f;
+            try
+            {
+                NGame game = NGame.Instance!;
+                _audio = game.AudioManager;
+                _setSfx = _audio?.GetType().GetMethod("SetSfxVol", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic);
+                if (_setSfx != null)
+                {
+                    var prop = _audio!.GetType().GetProperty("SfxVol") ?? _audio.GetType().GetProperty("SfxVolume");
+                    _oldSfx = prop?.GetValue(_audio);
+                    _setSfx.Invoke(_audio, [0f]);
+                }
+            }
+            catch (Exception error) { Entry.Logger.Warn($"Replay audio mute unavailable: {error.Message}"); }
+            Entry.Logger.Info("Replay speed scope enabled (5x, SFX muted when supported).");
+        }
+
+        public void Dispose()
+        {
+            try { Engine.TimeScale = _oldScale; } catch { }
+            try
+            {
+                if (_setSfx != null && _audio != null && _oldSfx is float volume)
+                    _setSfx.Invoke(_audio, [volume]);
+            }
+            catch (Exception error) { Entry.Logger.Warn($"Replay audio restore failed: {error.Message}"); }
+            Entry.Logger.Info("Replay speed scope restored.");
         }
     }
 

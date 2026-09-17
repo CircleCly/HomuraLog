@@ -1,4 +1,4 @@
-using Godot;
+using MegaCrit.Sts2.Core.Localization;
 
 namespace HomuraLog.UI;
 
@@ -6,7 +6,9 @@ internal static class HomuraText
 {
     public static string HandPosition(int position) => Chinese ? $"手牌第 {position} 张" : $"hand #{position} from left";
 
-    private static bool Chinese => TranslationServer.GetLocale().StartsWith("zh", StringComparison.OrdinalIgnoreCase);
+    // The game switches its own localization independently of Godot's project locale.
+    // Reading LocManager keeps our labels in sync after changing language and reloading a run.
+    private static bool Chinese => (LocManager.Instance?.Language ?? "").StartsWith("zh", StringComparison.OrdinalIgnoreCase);
     public static string Title => Chinese ? "世界线记录" : "Timeline Log";
     public static string Hide => Chinese ? "收起" : "Collapse";
     public static string Show => Chinese ? "世界线" : "Timeline";

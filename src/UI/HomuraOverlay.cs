@@ -34,6 +34,7 @@ internal sealed partial class HomuraOverlay : CanvasLayer
     private double _badgeRefresh;
     private double _combatWatchdogRefresh;
     private bool _hiddenForPause;
+    private bool _hiddenForCombatModal;
 
     public override void _Ready()
     {
@@ -51,6 +52,7 @@ internal sealed partial class HomuraOverlay : CanvasLayer
             StartCentered = false,
             ConstrainToViewport = true,
         }) { Position = new Vector2(24, 180) };
+        _panel.AddThemeFontOverride("font", RitsuShellTheme.Current.Font.Body);
         AddChild(_panel);
         _content = new VBoxContainer();
         _content.AddThemeConstantOverride("separation", 7);
@@ -364,12 +366,17 @@ internal sealed partial class HomuraOverlay : CanvasLayer
             return;
         }
         bool paused = RunManager.Instance.IsPaused;
-        if (paused != _hiddenForPause)
+        // Deck, draw-pile and discard-pile screens hide the combat hand. Treat that as
+        // a modal combat screen and keep the observational overlay out of the way.
+        bool combatModal = NPlayerHand.Instance == null || !NPlayerHand.Instance.IsVisibleInTree();
+        if (paused != _hiddenForPause || combatModal != _hiddenForCombatModal)
         {
             _hiddenForPause = paused;
-            if (_panel != null) _panel.Visible = !paused;
+            _hiddenForCombatModal = combatModal;
+            bool show = !paused && !combatModal;
+            if (_panel != null) _panel.Visible = show;
             if (_graphWindow != null && GodotObject.IsInstanceValid(_graphWindow))
-                _graphWindow.Visible = !paused;
+                _graphWindow.Visible = show;
         }
         if (!Visible || _snapshot == null) return;
         _badgeRefresh += delta;

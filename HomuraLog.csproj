@@ -1,0 +1,42 @@
+<Project Sdk="Godot.NET.Sdk/4.5.1">
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <LangVersion>13.0</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>true</ImplicitUsings>
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+    <RootNamespace>HomuraLog</RootNamespace>
+    <Version>0.5.0</Version>
+    <SteamRoot Condition="'$(SteamRoot)' == ''">E:/SteamLibrary</SteamRoot>
+    <Sts2Dir Condition="'$(Sts2Dir)' == ''">$(SteamRoot)/steamapps/common/Slay the Spire 2</Sts2Dir>
+    <Sts2DataDir Condition="'$(Sts2DataDir)' == ''">$(Sts2Dir)/data_sts2_windows_x86_64</Sts2DataDir>
+    <RitsuLibBundleDir Condition="'$(RitsuLibBundleDir)' == ''">$(SteamRoot)/steamapps/workshop/content/2868840/3747602295</RitsuLibBundleDir>
+    <RitsuLibReferenceTarget Condition="'$(RitsuLibReferenceTarget)' == ''">0.111.0</RitsuLibReferenceTarget>
+    <ModOutputDir>$(Sts2Dir)/mods/HomuraLog</ModOutputDir>
+    <CopyModOnBuild Condition="'$(CopyModOnBuild)' == ''">true</CopyModOnBuild>
+    <NoWarn>$(NoWarn);CS0436</NoWarn>
+  </PropertyGroup>
+
+  <Import Project="$(RitsuLibBundleDir)/RitsuLib.References.props"
+          Condition="Exists('$(RitsuLibBundleDir)/RitsuLib.References.props')" />
+
+  <ItemGroup>
+    <Compile Remove="tests/**/*.cs" />
+    <PackageReference Include="Krafs.Publicizer" Version="2.3.0" PrivateAssets="all" />
+    <Publicize Include="sts2" IncludeVirtualMembers="false" IncludeCompilerGeneratedMembers="false" />
+    <Reference Include="sts2" HintPath="$(Sts2DataDir)/sts2.dll" Private="false" />
+    <Reference Include="0Harmony" HintPath="$(Sts2DataDir)/0Harmony.dll" Private="false" />
+    <Reference Include="GodotSharp" HintPath="$(Sts2DataDir)/GodotSharp.dll" Private="false" />
+  </ItemGroup>
+
+  <Target Name="ValidateInstall" BeforeTargets="ResolveAssemblyReferences">
+    <Error Condition="!Exists('$(Sts2DataDir)/sts2.dll')" Text="Cannot find sts2.dll at $(Sts2DataDir). Set Sts2Dir in local.props." />
+    <Error Condition="!Exists('$(RitsuLibBundleDir)/RitsuLib.References.props')" Text="Cannot find STS2-RitsuLib. Set RitsuLibBundleDir in local.props." />
+  </Target>
+
+  <Target Name="CopyMod" AfterTargets="Build" Condition="'$(CopyModOnBuild)' == 'true'">
+    <MakeDir Directories="$(ModOutputDir)" />
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(ModOutputDir)" />
+    <Copy SourceFiles="$(MSBuildProjectDirectory)/HomuraLog.json" DestinationFolder="$(ModOutputDir)" />
+  </Target>
+</Project>

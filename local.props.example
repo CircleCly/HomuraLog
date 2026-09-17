@@ -1,0 +1,7 @@
+<Project>
+  <PropertyGroup>
+    <Sts2Dir>E:/SteamLibrary/steamapps/common/Slay the Spire 2</Sts2Dir>
+    <RitsuLibBundleDir>E:/SteamLibrary/steamapps/workshop/content/2868840/3747602295</RitsuLibBundleDir>
+    <CopyModOnBuild>true</CopyModOnBuild>
+  </PropertyGroup>
+</Project>

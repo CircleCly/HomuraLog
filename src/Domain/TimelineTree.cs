@@ -44,6 +44,13 @@ public sealed class TimelineTree
         return node;
     }
 
+    public bool FollowExisting(TimelineAction action)
+    {
+        if (!Current.Children.TryGetValue(action.Key, out TimelineNode? node)) return false;
+        _path.Add(node);
+        return true;
+    }
+
     public void MarkCurrent(TimelineOutcome outcome, DateTimeOffset now)
     {
         Current.Outcome = outcome;

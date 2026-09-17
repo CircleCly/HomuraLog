@@ -464,6 +464,7 @@ internal sealed partial class HomuraOverlay : CanvasLayer
                 Name = "HomuraLogBadge", Position = new Vector2(14, 14),
                 MouseFilter = Control.MouseFilterEnum.Ignore,
             };
+            badge.AddThemeFontOverride("font", RitsuShellTheme.Current.Font.BodyBold);
             badge.AddThemeFontSizeOverride("font_size", 24);
             badge.AddThemeConstantOverride("outline_size", 5);
             card.AddChild(badge);

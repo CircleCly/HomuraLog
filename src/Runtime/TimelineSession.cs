@@ -26,6 +26,7 @@ internal sealed class TimelineSession : IDisposable
     private readonly Dictionary<GameAction, List<TimelineAction>> _choices = new(ReferenceEqualityComparer.Instance);
     private bool _disposed;
     private bool _suppressCommit;
+    private readonly List<TimelineAction> _replayChoices = [];
 
     private sealed record PendingAction(GameAction Native, TimelineAction Action);
 
@@ -69,6 +70,7 @@ internal sealed class TimelineSession : IDisposable
         if (!_choices.TryGetValue(owner, out List<TimelineAction>? list))
             _choices[owner] = list = [];
         list.Add(choice);
+        if (_suppressCommit) _replayChoices.Add(choice);
     }
 
     internal IDisposable SuppressReplayCommits()
@@ -79,7 +81,24 @@ internal sealed class TimelineSession : IDisposable
 
     private sealed class ReplayCommitScope(TimelineSession session) : IDisposable
     {
-        public void Dispose() => session._suppressCommit = false;
+        public void Dispose()
+        {
+            session._suppressCommit = false;
+            session._replayChoices.Clear();
+        }
+    }
+
+    internal void AdvanceReplayCursor(TimelineAction action)
+    {
+        if (!_tree.FollowExisting(action))
+            throw new InvalidOperationException($"Recorded replay action is not a child of the current worldline node: {action.SourceId}.");
+        foreach (TimelineAction choice in _replayChoices)
+        {
+            if (!_tree.FollowExisting(choice))
+                throw new InvalidOperationException($"Recorded replay choice is not a child of the replayed action: {choice.SourceId}.");
+        }
+        _replayChoices.Clear();
+        NotifyChanged();
     }
 
     public static TimelineSession Start(CombatState combat)

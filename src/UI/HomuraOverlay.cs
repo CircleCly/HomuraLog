@@ -100,7 +100,14 @@ internal sealed partial class HomuraOverlay : CanvasLayer
         _session = session;
         _session.Changed += OnChanged;
         SetDisabled(false);
-        OnChanged(session.Snapshot);
+        // CombatStarting can fire before this CanvasLayer has entered the scene tree
+        // (notably after a language change/relaunch). Defer the first render so the
+        // Ritsu window is created and made visible reliably.
+        Callable.From(() =>
+        {
+            if (GodotObject.IsInstanceValid(this) && ReferenceEquals(_session, session))
+                OnChanged(session.Snapshot);
+        }).CallDeferred();
     }
 
     public void Unbind()
@@ -121,6 +128,11 @@ internal sealed partial class HomuraOverlay : CanvasLayer
     {
         if (_status != null) _status.Text = HomuraText.Disabled;
         Visible = !disabled;
+        if (!disabled && _session != null)
+            Callable.From(() =>
+            {
+                if (GodotObject.IsInstanceValid(this)) OnChanged(_session.Snapshot);
+            }).CallDeferred();
     }
 
     private void OnChanged(TimelineSnapshot snapshot)

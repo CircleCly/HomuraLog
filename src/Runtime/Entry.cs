@@ -144,7 +144,9 @@ public static class Entry
 
     private static void EnsureOverlay()
     {
-        if (_overlay != null || NGame.Instance == null) return;
+        if (_overlay != null && GodotObject.IsInstanceValid(_overlay)) return;
+        if (NGame.Instance == null) return;
+        _overlay = null;
         _overlay = new HomuraOverlay { Name = "HomuraLogOverlay" };
         NGame.Instance.AddChild(_overlay);
     }

@@ -30,7 +30,7 @@ internal sealed partial class HomuraOverlay : CanvasLayer
     private TimelineSession? _session;
     private TimelineSnapshot? _snapshot;
     private string? _selectedMiniNodeId;
-    private bool _collapsed = true;
+    private bool _collapsed;
     private double _badgeRefresh;
     private double _combatWatchdogRefresh;
     private bool _hiddenForPause;
@@ -86,7 +86,6 @@ internal sealed partial class HomuraOverlay : CanvasLayer
         _miniJump.AddThemeFontOverride("font", RitsuShellTheme.Current.Font.Button);
         _miniJump.Pressed += RequestMiniWorldlineJump;
         _content.AddChild(_miniJump);
-        ApplyCompactState();
         Visible = false;
         SetProcess(true);
         SetProcessInput(true);
@@ -396,7 +395,9 @@ internal sealed partial class HomuraOverlay : CanvasLayer
         _details!.Visible = !_collapsed;
         _miniJump!.Visible = !_collapsed;
         _panel.CustomMinimumSize = _collapsed ? new Vector2(220, 54) : new Vector2(640, 540);
-        _fullGraph.Visible = !_collapsed;
+        // The fullscreen graph remains reachable even in compact mode; otherwise a
+        // compact HUD can trap the user in a view with no way to inspect the tree.
+        _fullGraph.Visible = true;
         _toggle.Text = _collapsed ? HomuraText.Show : HomuraText.Hide;
     }
 

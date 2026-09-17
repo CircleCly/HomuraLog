@@ -16,6 +16,7 @@ internal sealed partial class TimelineGraphWindow : CanvasLayer
     private readonly Label _details;
     private readonly Button _fullscreenButton;
     private readonly Button _jumpButton;
+    private readonly Button _deleteButton;
     private readonly Dictionary<string, TimelineNodeSnapshot> _nodes = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> _segmentByNode = new(StringComparer.Ordinal);
     private readonly Dictionary<string, TimelineNodeSnapshot> _segmentTail = new(StringComparer.Ordinal);
@@ -109,6 +110,10 @@ internal sealed partial class TimelineGraphWindow : CanvasLayer
         ApplyButtonFont(_jumpButton);
         _jumpButton.Pressed += RequestJump;
         inspector.AddChild(_jumpButton);
+        _deleteButton = new Button { Text = HomuraText.DeleteNode, Disabled = true };
+        ApplyButtonFont(_deleteButton);
+        _deleteButton.Pressed += RequestDelete;
+        inspector.AddChild(_deleteButton);
         split.AddChild(inspector);
         content.AddChild(split);
         _window.SetContent(content);
@@ -116,6 +121,7 @@ internal sealed partial class TimelineGraphWindow : CanvasLayer
     }
 
     public event Action<string>? JumpRequested;
+    public event Action<string>? DeleteRequested;
 
     public override void _Ready() => Render();
 
@@ -223,6 +229,7 @@ internal sealed partial class TimelineGraphWindow : CanvasLayer
         _jumpArmed = false;
         _jumpButton.Text = HomuraText.JumpHere;
         _jumpButton.Disabled = node.Action == null;
+        _deleteButton.Disabled = node.Action == null;
         string action = node.Action == null ? HomuraText.Root : HomuraOverlay.ActionText(node.Action);
         string state = node.State == null ? HomuraText.None :
             $"T{node.State.Turn}\n{HomuraText.Hp} {node.State.PlayerHp}/{node.State.PlayerMaxHp}\n" +
@@ -245,6 +252,11 @@ internal sealed partial class TimelineGraphWindow : CanvasLayer
         }
         _jumpButton.Disabled = true;
         JumpRequested?.Invoke(_selectedNodeId);
+    }
+
+    private void RequestDelete()
+    {
+        if (!string.IsNullOrEmpty(_selectedNodeId)) DeleteRequested?.Invoke(_selectedNodeId);
     }
 
     private GraphNode CreateNode(GraphSegment segment)

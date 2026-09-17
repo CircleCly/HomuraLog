@@ -277,6 +277,16 @@ internal sealed class TimelineSession : IDisposable
         Save();
     }
 
+    public bool DeleteNode(string nodeId)
+    {
+        bool removed = _tree.Remove(nodeId);
+        if (!removed) return false;
+        Save();
+        NotifyChanged();
+        Entry.Logger.Info($"Deleted worldline subtree node={nodeId}.");
+        return true;
+    }
+
     private void Save()
     {
         try { _store.Save(_tree.Record); }

@@ -53,6 +53,33 @@ public sealed class TimelineTree
             _record.EndedAt = now;
     }
 
+    public bool Remove(string nodeId)
+    {
+        if (nodeId == _record.Root.NodeId) return false;
+        TimelineNode? parent = FindParent(_record.Root, nodeId);
+        if (parent == null) return false;
+        bool removed = parent.Children.Remove(nodeId);
+        if (removed)
+        {
+            int index = _path.FindIndex(node => node.NodeId == nodeId);
+            if (index >= 0) _path.RemoveRange(index, _path.Count - index);
+            if (_path.Count == 0) _path.Add(_record.Root);
+        }
+        return removed;
+    }
+
+    private static TimelineNode? FindParent(TimelineNode node, string id)
+    {
+        foreach (TimelineNode child in node.Children.Values)
+        {
+            if (child.NodeId == id) return node;
+            TimelineNode? found = FindParent(child, id);
+            if (found != null) return found;
+        }
+        return null;
+    }
+
+
     public TimelineSnapshot Snapshot()
     {
         TimelineAction[] path = _path.Skip(1).Select(node => node.Action!).ToArray();

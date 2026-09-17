@@ -120,7 +120,7 @@ internal sealed partial class HomuraOverlay : CanvasLayer
     public void SetDisabled(bool disabled)
     {
         if (_status != null) _status.Text = HomuraText.Disabled;
-        Visible = disabled;
+        Visible = !disabled;
     }
 
     private void OnChanged(TimelineSnapshot snapshot)
@@ -277,7 +277,14 @@ internal sealed partial class HomuraOverlay : CanvasLayer
         }
         _graphWindow = new TimelineGraphWindow(_snapshot) { Name = "HomuraTimelineGraph" };
         _graphWindow.JumpRequested += RequestWorldlineJump;
+        _graphWindow.DeleteRequested += DeleteWorldlineNode;
         AddChild(_graphWindow);
+    }
+
+    private void DeleteWorldlineNode(string nodeId)
+    {
+        if (_session == null || _snapshot == null || nodeId == _snapshot.Root.NodeId) return;
+        _session.DeleteNode(nodeId);
     }
 
     internal void RunSmokeCheck()

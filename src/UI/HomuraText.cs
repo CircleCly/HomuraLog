@@ -35,6 +35,7 @@ internal static class HomuraText
     public static string Fullscreen => Chinese ? "全屏" : "Fullscreen";
     public static string ExitFullscreen => Chinese ? "退出全屏" : "Exit fullscreen";
     public static string JumpHere => Chinese ? "跳到此世界线" : "Jump to this timeline";
+    public static string DeleteNode => Chinese ? "删除节点及后续分支" : "Delete node and descendants";
     public static string ConfirmJump => Chinese ? "再次点击确认重载并回放" : "Click again to reload and replay";
     public static string JumpRootUnavailable => Chinese ? "战斗入口无需回放" : "The combat entry needs no replay";
     public static string GraphHelp => Chinese ? "滚轮缩放 · 拖动空白处平移 · 点击节点查看详情" : "Wheel to zoom · drag the background to pan · click a node for details";

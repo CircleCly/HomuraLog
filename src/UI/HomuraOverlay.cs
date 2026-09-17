@@ -5,6 +5,7 @@ using MegaCrit.Sts2.Core.Combat;
 using MegaCrit.Sts2.Core.Entities.Multiplayer;
 using MegaCrit.Sts2.Core.Nodes.Combat;
 using MegaCrit.Sts2.Core.Nodes.Potions;
+using MegaCrit.Sts2.Core.Nodes.Screens;
 using MegaCrit.Sts2.Core.Runs;
 using STS2RitsuLib.Ui.Controls;
 using STS2RitsuLib.Ui.Shell.Theme;
@@ -35,6 +36,7 @@ internal sealed partial class HomuraOverlay : CanvasLayer
     private double _combatWatchdogRefresh;
     private bool _hiddenForPause;
     private bool _hiddenForCombatModal;
+    private Vector2 _expandedSize = new(680, 600);
 
     public override void _Ready()
     {
@@ -178,7 +180,7 @@ internal sealed partial class HomuraOverlay : CanvasLayer
         }
         if (node.State.PlayerBlock >= 0)
         {
-            _details.Text = FormatRichDetails(node.State);
+            _details.Text = FormatRichDetails(node.State, node.IsCurrent);
             return;
         }
         string enemies = string.Join(", ", node.State.Enemies.Select(enemy =>
@@ -271,13 +273,27 @@ internal sealed partial class HomuraOverlay : CanvasLayer
         _ => action.SourceId,
     };
 
-    private static string FormatRichDetails(CombatStateSummary state)
+    private static string FormatRichDetails(CombatStateSummary state, bool useLiveIntent = false)
     {
         string enemies = string.Join("\n", state.Enemies.Select(enemy =>
             $"  {enemy.ModelId} {enemy.Hp}/{enemy.MaxHp}" + (enemy.Block > 0 ? $" (+{enemy.Block})" : "")
-            + (string.IsNullOrWhiteSpace(enemy.Intent) ? "" : $" · {HomuraText.Intent}: {enemy.Intent}")));
+            + (string.IsNullOrWhiteSpace(IntentForDisplay(enemy, useLiveIntent)) ? "" : $" · {HomuraText.Intent}: {IntentForDisplay(enemy, useLiveIntent)}")));
         return $"{HomuraText.Details}: T{state.Turn} · {HomuraText.Hp} {state.PlayerHp}/{state.PlayerMaxHp} · " +
             $"{HomuraText.Block} {state.PlayerBlock} · {HomuraText.Energy} {state.Energy}\n{HomuraText.EnemyHp}:\n{enemies}";
+    }
+
+    private static string IntentForDisplay(CreatureState recorded, bool useLiveIntent)
+    {
+        if (!useLiveIntent || !recorded.CombatId.HasValue) return recorded.Intent;
+        try
+        {
+            var combat = CombatManager.Instance.DebugOnlyGetState();
+            var enemy = combat?.Enemies.FirstOrDefault(candidate => candidate.CombatId == recorded.CombatId.Value);
+            if (enemy?.Monster == null) return recorded.Intent;
+            return string.Join(" + ", enemy.Monster.NextMove.Intents.Select(intent =>
+                intent.GetIntentLabel(combat!.Allies, enemy).GetFormattedText().Trim()));
+        }
+        catch { return recorded.Intent; }
     }
 
     private void ShowFullGraph()
@@ -368,7 +384,7 @@ internal sealed partial class HomuraOverlay : CanvasLayer
         bool paused = RunManager.Instance.IsPaused;
         // Deck, draw-pile and discard-pile screens hide the combat hand. Treat that as
         // a modal combat screen and keep the observational overlay out of the way.
-        bool combatModal = NPlayerHand.Instance == null || !NPlayerHand.Instance.IsVisibleInTree();
+        bool combatModal = IsCombatModalOpen();
         if (paused != _hiddenForPause || combatModal != _hiddenForCombatModal)
         {
             _hiddenForPause = paused;
@@ -401,11 +417,31 @@ internal sealed partial class HomuraOverlay : CanvasLayer
         _miniGraph!.Visible = !_collapsed;
         _details!.Visible = !_collapsed;
         _miniJump!.Visible = !_collapsed;
-        _panel.CustomMinimumSize = _collapsed ? new Vector2(220, 54) : new Vector2(640, 540);
+        if (_collapsed)
+        {
+            if (_panel.Size.X > 300 || _panel.Size.Y > 100) _expandedSize = _panel.Size;
+            _panel.CustomMinimumSize = new Vector2(220, 54);
+            _panel.Size = new Vector2(220, 54);
+        }
+        else
+        {
+            _panel.CustomMinimumSize = new Vector2(640, 540);
+            _panel.Size = new Vector2(Math.Max(640, _expandedSize.X), Math.Max(540, _expandedSize.Y));
+        }
         // The fullscreen graph remains reachable even in compact mode; otherwise a
         // compact HUD can trap the user in a view with no way to inspect the tree.
         _fullGraph.Visible = true;
         _toggle.Text = _collapsed ? HomuraText.Show : HomuraText.Hide;
+    }
+
+    private bool IsCombatModalOpen()
+    {
+        if (NPlayerHand.Instance == null || !NPlayerHand.Instance.IsVisibleInTree()) return true;
+        Node root = GetTree().Root;
+        return root.FindChildren("*", nameof(NCardPileScreen), true, false)
+                .OfType<Control>().Any(screen => screen.IsVisibleInTree())
+            || root.FindChildren("*", nameof(NDeckViewScreen), true, false)
+                .OfType<Control>().Any(screen => screen.IsVisibleInTree());
     }
 
     private void RefreshCardBadges()

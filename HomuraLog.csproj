@@ -6,7 +6,7 @@
     <ImplicitUsings>true</ImplicitUsings>
     <EnableDynamicLoading>true</EnableDynamicLoading>
     <RootNamespace>HomuraLog</RootNamespace>
-    <Version>0.5.0</Version>
+    <Version>0.6.0</Version>
     <SteamRoot Condition="'$(SteamRoot)' == ''">E:/SteamLibrary</SteamRoot>
     <Sts2Dir Condition="'$(Sts2Dir)' == ''">$(SteamRoot)/steamapps/common/Slay the Spire 2</Sts2Dir>
     <Sts2DataDir Condition="'$(Sts2DataDir)' == ''">$(Sts2Dir)/data_sts2_windows_x86_64</Sts2DataDir>

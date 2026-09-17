@@ -23,11 +23,13 @@ internal sealed partial class HomuraOverlay : CanvasLayer
     private TimelineMiniGraph? _miniGraph;
     private Godot.Tree? _tree;
     private Label? _details;
+    private Button? _miniJump;
     private Button? _fullGraph;
     private TimelineGraphWindow? _graphWindow;
     private readonly Dictionary<TreeItem, TimelineNodeSnapshot> _treeNodes = [];
     private TimelineSession? _session;
     private TimelineSnapshot? _snapshot;
+    private string? _selectedMiniNodeId;
     private bool _collapsed;
     private double _badgeRefresh;
     private double _combatWatchdogRefresh;
@@ -76,11 +78,14 @@ internal sealed partial class HomuraOverlay : CanvasLayer
             SizeFlagsVertical = Control.SizeFlags.ExpandFill,
         };
         _miniGraph.NodeActivated += ShowNodeDetails;
-        _miniGraph.NodeJumpRequested += RequestWorldlineJump;
         _content.AddChild(_miniGraph);
         _content.AddChild(RitsuControlFactory.CreateDivider());
         _details = CreateRitsuLabel();
         _content.AddChild(_details);
+        _miniJump = new Button { Text = HomuraText.JumpHere, Disabled = true, FocusMode = Control.FocusModeEnum.None };
+        _miniJump.AddThemeFontOverride("font", RitsuShellTheme.Current.Font.Button);
+        _miniJump.Pressed += RequestMiniWorldlineJump;
+        _content.AddChild(_miniJump);
         Visible = false;
         SetProcess(true);
         SetProcessInput(true);
@@ -104,6 +109,7 @@ internal sealed partial class HomuraOverlay : CanvasLayer
         if (_session != null) _session.Changed -= OnChanged;
         _session = null;
         _snapshot = null;
+        _selectedMiniNodeId = null;
         _graphWindow?.QueueFree();
         _graphWindow = null;
         Visible = false;
@@ -148,6 +154,9 @@ internal sealed partial class HomuraOverlay : CanvasLayer
     {
         if (_snapshot == null || _details == null) return;
         TimelineNodeSnapshot? node = FindNode(_snapshot.Root, nodeId);
+        _selectedMiniNodeId = node?.NodeId;
+        if (_miniJump != null)
+            _miniJump.Disabled = node?.Action == null || node.NodeId == _snapshot.CurrentNodeId;
         if (node == null || node.State == null)
         {
             _details.Text = HomuraText.Details + ": " + HomuraText.None;
@@ -285,6 +294,13 @@ internal sealed partial class HomuraOverlay : CanvasLayer
         WorldlineReplayController.Request(_session, nodeId);
     }
 
+    private void RequestMiniWorldlineJump()
+    {
+        if (_selectedMiniNodeId == null || _snapshot == null
+            || _selectedMiniNodeId == _snapshot.CurrentNodeId) return;
+        RequestWorldlineJump(_selectedMiniNodeId);
+    }
+
     private void OnReplayStatus(string message)
     {
         if (_status != null) _status.Text = message;
@@ -350,6 +366,7 @@ internal sealed partial class HomuraOverlay : CanvasLayer
         _branches!.Visible = !_collapsed;
         _miniGraph!.Visible = !_collapsed;
         _details!.Visible = !_collapsed;
+        _miniJump!.Visible = !_collapsed;
         _panel!.CustomMinimumSize = _collapsed ? new Vector2(260, 80) : new Vector2(640, 540);
         _toggle.Text = _collapsed ? HomuraText.Show : HomuraText.Hide;
     }

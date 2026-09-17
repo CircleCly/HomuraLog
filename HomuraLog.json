@@ -3,7 +3,7 @@
   "name": "HomuraLog",
   "author": "Torch",
   "description": "Records explored combat timelines across save-and-load attempts.",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "has_pck": false,
   "has_dll": true,
   "affects_gameplay": false,

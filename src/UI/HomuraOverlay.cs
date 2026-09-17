@@ -38,6 +38,7 @@ internal sealed partial class HomuraOverlay : CanvasLayer
     private bool _hiddenForPause;
     private bool _hiddenForCombatModal;
     private Vector2 _expandedSize = new(680, 600);
+    private string _lastLanguage = "";
 
     public override void _Ready()
     {
@@ -95,6 +96,7 @@ internal sealed partial class HomuraOverlay : CanvasLayer
         _miniJump.AddThemeFontOverride("font", RitsuShellTheme.Current.Font.Button);
         _miniJump.Pressed += RequestMiniWorldlineJump;
         _content.AddChild(_miniJump);
+        RefreshLocalizedChrome();
         Visible = false;
         SetProcess(true);
         SetProcessInput(true);
@@ -270,7 +272,7 @@ internal sealed partial class HomuraOverlay : CanvasLayer
     internal static string ActionText(TimelineAction action) => action.Kind switch
     {
         TimelineActionKind.PlayCard => $"T{action.Turn} {LocalizedModelNames.Card(action.SourceId)}" +
-            (action.HandPosition.HasValue ? $" ({(HomuraText.Chinese ? HomuraText.HandPosition(action.HandPosition.Value) : $"Hand #{action.HandPosition.Value}")})" : "") +
+            (action.HandPosition.HasValue ? $" ({HomuraText.HandPosition(action.HandPosition.Value)})" : "") +
             (action.TargetId.HasValue ? $" → #{action.TargetId}" : ""),
         TimelineActionKind.UsePotion => $"T{action.Turn} 🧪 {LocalizedModelNames.Potion(action.SourceId)}" + (action.TargetId.HasValue ? $" → #{action.TargetId}" : ""),
         TimelineActionKind.EndTurn => $"T{action.Turn} ⏭ {HomuraText.EndTurn}",
@@ -361,9 +363,9 @@ internal sealed partial class HomuraOverlay : CanvasLayer
 
     private static string ResultText(TimelineOutcome outcome) => outcome switch
     {
-        TimelineOutcome.Victory => "★ Win",
-        TimelineOutcome.Defeat => "☠ Loss",
-        TimelineOutcome.Aborted => "↺ SL",
+        TimelineOutcome.Victory => $"★ {HomuraText.OutcomeVictory}",
+        TimelineOutcome.Defeat => $"☠ {HomuraText.OutcomeDefeat}",
+        TimelineOutcome.Aborted => $"↺ {HomuraText.OutcomeAborted}",
         _ => "—",
     };
 
@@ -374,6 +376,8 @@ internal sealed partial class HomuraOverlay : CanvasLayer
 
     public override void _Process(double delta)
     {
+        if (!string.Equals(_lastLanguage, HomuraText.Language, StringComparison.Ordinal))
+            RefreshLocalizedChrome();
         _combatWatchdogRefresh += delta;
         if (_combatWatchdogRefresh >= 0.25)
         {
@@ -405,6 +409,28 @@ internal sealed partial class HomuraOverlay : CanvasLayer
         if (_badgeRefresh < 0.2) return;
         _badgeRefresh = 0;
         RefreshCardBadges();
+    }
+
+    private void RefreshLocalizedChrome()
+    {
+        _lastLanguage = HomuraText.Language;
+        if (_toggle != null) _toggle.Text = _collapsed ? HomuraText.Show : HomuraText.Hide;
+        if (_fullGraph != null) _fullGraph.Text = HomuraText.FullGraph;
+        if (_resetMini != null) _resetMini.Text = HomuraText.ResetView;
+        if (_miniJump != null) _miniJump.Text = HomuraText.JumpHere;
+        try
+        {
+            var field = typeof(RitsuFloatingWindow).GetField("_title",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+            if (field?.GetValue(_panel) is Label title) title.Text = HomuraText.Title;
+        }
+        catch (Exception error) { Entry.Logger.Warn($"Could not refresh localized window title: {error.Message}"); }
+        if (_graphWindow != null && GodotObject.IsInstanceValid(_graphWindow))
+        {
+            _graphWindow.QueueFree();
+            _graphWindow = null;
+        }
+        if (_snapshot != null) Render();
     }
 
     private void Toggle()

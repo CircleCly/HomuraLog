@@ -385,9 +385,9 @@ internal sealed partial class TimelineGraphWindow : CanvasLayer
 
     private static string ResultBadge(TimelineOutcome outcome) => outcome switch
     {
-        TimelineOutcome.Victory => "★ WIN",
-        TimelineOutcome.Defeat => "☠ LOSS",
-        TimelineOutcome.Aborted => "↺ SL",
+        TimelineOutcome.Victory => $"★ {HomuraText.OutcomeVictory}",
+        TimelineOutcome.Defeat => $"☠ {HomuraText.OutcomeDefeat}",
+        TimelineOutcome.Aborted => $"↺ {HomuraText.OutcomeAborted}",
         _ => "…",
     };
 

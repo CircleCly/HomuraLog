@@ -4,11 +4,13 @@ namespace HomuraLog.UI;
 
 internal static class HomuraText
 {
-    public static string HandPosition(int position) => Chinese ? $"手牌第 {position} 张" : $"hand #{position} from left";
+    public static string HandPosition(int position) => Chinese ? $"手牌第 {position} 张" : $"Hand #{position}";
 
     // The game switches its own localization independently of Godot's project locale.
     // Reading LocManager keeps our labels in sync after changing language and reloading a run.
-    internal static bool Chinese => (LocManager.Instance?.Language ?? "").StartsWith("zh", StringComparison.OrdinalIgnoreCase);
+    internal static string Language => LocManager.Instance?.Language ?? "eng";
+    internal static bool Chinese => Language is "zhs" or "zht"
+        || Language.StartsWith("zh", StringComparison.OrdinalIgnoreCase);
     public static string Title => Chinese ? "世界线记录" : "Timeline Log";
     public static string Hide => Chinese ? "收起" : "Collapse";
     public static string Show => Chinese ? "世界线" : "Timeline";
@@ -44,4 +46,7 @@ internal static class HomuraText
     public static string LargeTreeHint(int shown, int total) => Chinese
         ? $"为保持流畅，当前显示 {shown}/{total} 个节点；完整记录未被合并。"
         : $"Showing {shown}/{total} nodes for performance; the full record remains exact.";
+    public static string OutcomeVictory => Chinese ? "胜利" : "Win";
+    public static string OutcomeDefeat => Chinese ? "失败" : "Loss";
+    public static string OutcomeAborted => Chinese ? "已回溯" : "SL";
 }

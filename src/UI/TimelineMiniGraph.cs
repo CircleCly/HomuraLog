@@ -28,6 +28,8 @@ internal sealed partial class TimelineMiniGraph : Control
 
     public event Action<string>? NodeActivated;
 
+    public void ResetToCurrent() => CenterCurrent();
+
     public void SetSnapshot(TimelineSnapshot? snapshot)
     {
         bool currentChanged = snapshot?.CurrentNodeId != _lastCurrentNodeId;

@@ -26,6 +26,7 @@ internal sealed partial class HomuraOverlay : CanvasLayer
     private Label? _details;
     private Button? _miniJump;
     private Button? _fullGraph;
+    private Button? _resetMini;
     private TimelineGraphWindow? _graphWindow;
     private readonly Dictionary<TreeItem, TimelineNodeSnapshot> _treeNodes = [];
     private TimelineSession? _session;
@@ -71,6 +72,10 @@ internal sealed partial class HomuraOverlay : CanvasLayer
         _fullGraph.AddThemeFontOverride("font", RitsuShellTheme.Current.Font.Button);
         _fullGraph.Pressed += ShowFullGraph;
         header.AddChild(_fullGraph);
+        _resetMini = new Button { Text = HomuraText.ResetView, FocusMode = Control.FocusModeEnum.None };
+        _resetMini.AddThemeFontOverride("font", RitsuShellTheme.Current.Font.Button);
+        _resetMini.Pressed += () => _miniGraph?.ResetToCurrent();
+        header.AddChild(_resetMini);
 
         _status = CreateRitsuLabel();
         _path = CreateRitsuLabel();
@@ -265,7 +270,7 @@ internal sealed partial class HomuraOverlay : CanvasLayer
     internal static string ActionText(TimelineAction action) => action.Kind switch
     {
         TimelineActionKind.PlayCard => $"T{action.Turn} {LocalizedModelNames.Card(action.SourceId)}" +
-            (action.HandPosition.HasValue ? $" ({HomuraText.HandPosition(action.HandPosition.Value)})" : "") +
+            (action.HandPosition.HasValue ? $" ({(HomuraText.Chinese ? HomuraText.HandPosition(action.HandPosition.Value) : $"Hand #{action.HandPosition.Value}")})" : "") +
             (action.TargetId.HasValue ? $" → #{action.TargetId}" : ""),
         TimelineActionKind.UsePotion => $"T{action.Turn} 🧪 {LocalizedModelNames.Potion(action.SourceId)}" + (action.TargetId.HasValue ? $" → #{action.TargetId}" : ""),
         TimelineActionKind.EndTurn => $"T{action.Turn} ⏭ {HomuraText.EndTurn}",
@@ -284,7 +289,8 @@ internal sealed partial class HomuraOverlay : CanvasLayer
 
     private static string IntentForDisplay(CreatureState recorded, bool useLiveIntent)
     {
-        if (!useLiveIntent || !recorded.CombatId.HasValue) return recorded.Intent;
+        if (!useLiveIntent || !recorded.CombatId.HasValue)
+            return !HomuraText.Chinese && recorded.Intent.Any(character => character > 127) ? "" : recorded.Intent;
         try
         {
             var combat = CombatManager.Instance.DebugOnlyGetState();
@@ -410,7 +416,7 @@ internal sealed partial class HomuraOverlay : CanvasLayer
     private void ApplyCompactState()
     {
         if (_content == null || _toggle == null || _panel == null || _status == null || _path == null
-            || _branches == null || _miniGraph == null || _details == null || _miniJump == null || _fullGraph == null) return;
+            || _branches == null || _miniGraph == null || _details == null || _miniJump == null || _fullGraph == null || _resetMini == null) return;
         _status!.Visible = !_collapsed;
         _path!.Visible = !_collapsed;
         _branches!.Visible = !_collapsed;
@@ -431,6 +437,7 @@ internal sealed partial class HomuraOverlay : CanvasLayer
         // The fullscreen graph remains reachable even in compact mode; otherwise a
         // compact HUD can trap the user in a view with no way to inspect the tree.
         _fullGraph.Visible = true;
+        _resetMini.Visible = true;
         _toggle.Text = _collapsed ? HomuraText.Show : HomuraText.Hide;
     }
 

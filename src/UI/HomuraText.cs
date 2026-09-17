@@ -8,7 +8,7 @@ internal static class HomuraText
 
     // The game switches its own localization independently of Godot's project locale.
     // Reading LocManager keeps our labels in sync after changing language and reloading a run.
-    private static bool Chinese => (LocManager.Instance?.Language ?? "").StartsWith("zh", StringComparison.OrdinalIgnoreCase);
+    internal static bool Chinese => (LocManager.Instance?.Language ?? "").StartsWith("zh", StringComparison.OrdinalIgnoreCase);
     public static string Title => Chinese ? "世界线记录" : "Timeline Log";
     public static string Hide => Chinese ? "收起" : "Collapse";
     public static string Show => Chinese ? "世界线" : "Timeline";

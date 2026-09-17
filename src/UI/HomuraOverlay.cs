@@ -30,7 +30,7 @@ internal sealed partial class HomuraOverlay : CanvasLayer
     private TimelineSession? _session;
     private TimelineSnapshot? _snapshot;
     private string? _selectedMiniNodeId;
-    private bool _collapsed;
+    private bool _collapsed = true;
     private double _badgeRefresh;
     private double _combatWatchdogRefresh;
     private bool _hiddenForPause;
@@ -86,6 +86,7 @@ internal sealed partial class HomuraOverlay : CanvasLayer
         _miniJump.AddThemeFontOverride("font", RitsuShellTheme.Current.Font.Button);
         _miniJump.Pressed += RequestMiniWorldlineJump;
         _content.AddChild(_miniJump);
+        ApplyCompactState();
         Visible = false;
         SetProcess(true);
         SetProcessInput(true);
@@ -380,15 +381,22 @@ internal sealed partial class HomuraOverlay : CanvasLayer
 
     private void Toggle()
     {
-        if (_content == null || _toggle == null) return;
         _collapsed = !_collapsed;
+        ApplyCompactState();
+    }
+
+    private void ApplyCompactState()
+    {
+        if (_content == null || _toggle == null || _panel == null || _status == null || _path == null
+            || _branches == null || _miniGraph == null || _details == null || _miniJump == null || _fullGraph == null) return;
         _status!.Visible = !_collapsed;
         _path!.Visible = !_collapsed;
         _branches!.Visible = !_collapsed;
         _miniGraph!.Visible = !_collapsed;
         _details!.Visible = !_collapsed;
         _miniJump!.Visible = !_collapsed;
-        _panel!.CustomMinimumSize = _collapsed ? new Vector2(260, 80) : new Vector2(640, 540);
+        _panel.CustomMinimumSize = _collapsed ? new Vector2(220, 54) : new Vector2(640, 540);
+        _fullGraph.Visible = !_collapsed;
         _toggle.Text = _collapsed ? HomuraText.Show : HomuraText.Hide;
     }
 

@@ -452,6 +452,7 @@ internal sealed partial class HomuraOverlay : CanvasLayer
         await WaitForUiFrames(4);
         _graphWindow?.RunLargeWindowSmokeCheck();
         await CaptureViewport(outputDirectory, "06-large-shared-focus.png");
+        await RunLargePointerSmokeChecks(outputDirectory, alternate);
 
         ResetSharedFocusFromLarge();
         await WaitForUiFrames(2);
@@ -460,6 +461,7 @@ internal sealed partial class HomuraOverlay : CanvasLayer
         CloseGraphWindow();
         await WaitForUiFrames(2);
         await CaptureViewport(outputDirectory, "08-mini-reset-current.png");
+        await RunMiniPointerSmokeChecks(outputDirectory, fanout);
         await CaptureNativeScreenSuppression(outputDirectory, "mega_view_draw_pile",
             "NCardPileScreen", "09-native-draw-pile.png");
         await CaptureNativeScreenSuppression(outputDirectory, "mega_view_discard_pile",
@@ -469,6 +471,150 @@ internal sealed partial class HomuraOverlay : CanvasLayer
         await CaptureNativeScreenSuppression(outputDirectory, "mega_pause_and_back",
             "NCapstoneSubmenuStack", "12-native-pause.png");
         Entry.Logger.Info($"Visual smoke check captured screenshots directory={outputDirectory}.");
+    }
+
+    private async Task RunMiniPointerSmokeChecks(string directory, TimelineNodeSnapshot? fanout)
+    {
+        if (_miniGraph == null || fanout == null || fanout.Children.Count < 2) return;
+        SetSharedFocus(fanout.NodeId, FocusSource.External);
+        await WaitForUiFrames(3);
+
+        int branchBefore = _miniGraph.SmokeSelectedBranchIndex;
+        await ClickAt(_miniGraph.SmokeNavigationCenter("Right"));
+        bool rightWorked = _miniGraph.SmokeSelectedBranchIndex == branchBefore + 1;
+        Entry.Logger.Info($"Visual smoke pointer mini-right worked={rightWorked} " +
+            $"before={branchBefore} after={_miniGraph.SmokeSelectedBranchIndex}.");
+        await CaptureViewport(directory, "13-mini-pointer-right.png");
+
+        string expectedChild = fanout.Children[_miniGraph.SmokeSelectedBranchIndex].NodeId;
+        await ClickAt(_miniGraph.SmokeNavigationCenter("Down"));
+        bool downWorked = string.Equals(_focus.FocusedNodeId, expectedChild, StringComparison.Ordinal);
+        Entry.Logger.Info($"Visual smoke pointer mini-down worked={downWorked} " +
+            $"expected={expectedChild} actual={_focus.FocusedNodeId}.");
+        await CaptureViewport(directory, "14-mini-pointer-down.png");
+
+        float zoomBefore = _miniGraph.SmokeZoom;
+        Vector2 canvasPoint = _miniGraph.SmokeCanvasPoint();
+        GetViewport().PushInput(new InputEventMouseButton
+        {
+            Position = canvasPoint,
+            GlobalPosition = canvasPoint,
+            ButtonIndex = MouseButton.WheelUp,
+            Pressed = true
+        }, true);
+        await WaitForUiFrames(2);
+        bool zoomWorked = _miniGraph.SmokeZoom > zoomBefore;
+
+        Vector2 panBefore = _miniGraph.SmokePan;
+        Vector2 dragEnd = canvasPoint + new Vector2(44, 30);
+        GetViewport().PushInput(new InputEventMouseButton
+        {
+            Position = canvasPoint,
+            GlobalPosition = canvasPoint,
+            ButtonIndex = MouseButton.Left,
+            Pressed = true
+        }, true);
+        await WaitForUiFrames(1);
+        GetViewport().PushInput(new InputEventMouseMotion
+        {
+            Position = dragEnd,
+            GlobalPosition = dragEnd,
+            Relative = dragEnd - canvasPoint,
+            ButtonMask = MouseButtonMask.Left
+        }, true);
+        await WaitForUiFrames(1);
+        GetViewport().PushInput(new InputEventMouseButton
+        {
+            Position = dragEnd,
+            GlobalPosition = dragEnd,
+            ButtonIndex = MouseButton.Left,
+            Pressed = false
+        }, true);
+        await WaitForUiFrames(2);
+        bool dragWorked = _miniGraph.SmokePan.DistanceTo(panBefore) >= 6f;
+        Entry.Logger.Info($"Visual smoke pointer mini-canvas zoomWorked={zoomWorked} " +
+            $"zoomBefore={zoomBefore:0.00} zoomAfter={_miniGraph.SmokeZoom:0.00} " +
+            $"dragWorked={dragWorked} panDelta={_miniGraph.SmokePan - panBefore}.");
+        await CaptureViewport(directory, "15-mini-pointer-zoom-drag.png");
+        ResetSharedFocusFromMini();
+        await WaitForUiFrames(2);
+    }
+
+    private async Task RunLargePointerSmokeChecks(string directory, TimelineNodeSnapshot? alternate)
+    {
+        if (_graphWindow == null || alternate == null || !GodotObject.IsInstanceValid(_graphWindow)) return;
+        string beforeFocus = _focus.FocusedNodeId ?? "";
+        if (!_graphWindow.PrepareNodeRowPointerTest(alternate.NodeId)) return;
+        await WaitForUiFrames(3);
+        Vector2 rowPoint = _graphWindow.SmokeNodeRowCenter(alternate.NodeId);
+        await ClickAt(rowPoint);
+        bool rowWorked = string.Equals(_focus.FocusedNodeId, alternate.NodeId, StringComparison.Ordinal);
+        Entry.Logger.Info($"Visual smoke pointer large-row worked={rowWorked} before={beforeFocus} " +
+            $"expected={alternate.NodeId} actual={_focus.FocusedNodeId} point={rowPoint}.");
+
+        Vector2 canvasPoint = _graphWindow.SmokeCanvasPoint();
+        float zoomBefore = _graphWindow.SmokeZoom;
+        GetViewport().PushInput(new InputEventMouseButton
+        {
+            Position = canvasPoint,
+            GlobalPosition = canvasPoint,
+            ButtonIndex = MouseButton.WheelUp,
+            Pressed = true
+        }, true);
+        await WaitForUiFrames(2);
+        bool zoomWorked = _graphWindow.SmokeZoom > zoomBefore;
+
+        Vector2 scrollBefore = _graphWindow.SmokeScrollOffset;
+        Vector2 dragEnd = canvasPoint + new Vector2(46, 28);
+        GetViewport().PushInput(new InputEventMouseButton
+        {
+            Position = canvasPoint,
+            GlobalPosition = canvasPoint,
+            ButtonIndex = MouseButton.Left,
+            Pressed = true
+        }, true);
+        await WaitForUiFrames(1);
+        GetViewport().PushInput(new InputEventMouseMotion
+        {
+            Position = dragEnd,
+            GlobalPosition = dragEnd,
+            Relative = dragEnd - canvasPoint,
+            ButtonMask = MouseButtonMask.Left
+        }, true);
+        await WaitForUiFrames(1);
+        GetViewport().PushInput(new InputEventMouseButton
+        {
+            Position = dragEnd,
+            GlobalPosition = dragEnd,
+            ButtonIndex = MouseButton.Left,
+            Pressed = false
+        }, true);
+        await WaitForUiFrames(2);
+        bool dragWorked = _graphWindow.SmokeScrollOffset.DistanceTo(scrollBefore) >= 6f;
+        Entry.Logger.Info($"Visual smoke pointer large-canvas zoomWorked={zoomWorked} " +
+            $"zoomBefore={zoomBefore:0.00} zoomAfter={_graphWindow.SmokeZoom:0.00} " +
+            $"dragWorked={dragWorked} scrollDelta={_graphWindow.SmokeScrollOffset - scrollBefore}.");
+        await CaptureViewport(directory, "16-large-pointer-row-zoom-drag.png");
+    }
+
+    private async Task ClickAt(Vector2 position)
+    {
+        GetViewport().PushInput(new InputEventMouseButton
+        {
+            Position = position,
+            GlobalPosition = position,
+            ButtonIndex = MouseButton.Left,
+            Pressed = true
+        }, true);
+        await WaitForUiFrames(1);
+        GetViewport().PushInput(new InputEventMouseButton
+        {
+            Position = position,
+            GlobalPosition = position,
+            ButtonIndex = MouseButton.Left,
+            Pressed = false
+        }, true);
+        await WaitForUiFrames(2);
     }
 
     private async Task CaptureNativeScreenSuppression(

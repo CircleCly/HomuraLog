@@ -138,6 +138,26 @@ internal sealed partial class TimelineGraphWindow : CanvasLayer
     public event Action? Closed;
 
     public bool IsAvailable => !_closedNotified && GodotObject.IsInstanceValid(this);
+    internal string? SmokeSelectedNodeId => _selectedNodeId;
+    internal float SmokeZoom => _graph.Zoom;
+    internal Vector2 SmokeScrollOffset => _graph.ScrollOffset;
+
+    internal bool PrepareNodeRowPointerTest(string nodeId)
+    {
+        if (!_nodeRows.TryGetValue(nodeId, out Button? row)) return false;
+        SetFocusedNode(nodeId);
+        return GodotObject.IsInstanceValid(row);
+    }
+
+    internal Vector2 SmokeNodeRowCenter(string nodeId)
+        => _nodeRows.TryGetValue(nodeId, out Button? row)
+            ? row.GetGlobalRect().GetCenter() : Vector2.Zero;
+
+    internal Vector2 SmokeCanvasPoint()
+    {
+        Rect2 rect = _graph.GetGlobalRect();
+        return rect.Position + new Vector2(Math.Max(40, rect.Size.X * 0.48f), rect.Size.Y - 34);
+    }
 
     public override void _Ready()
     {

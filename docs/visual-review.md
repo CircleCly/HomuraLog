@@ -13,6 +13,8 @@ Evidence is stored under `%APPDATA%\SlayTheSpire2\HomuraLog\visual-smoke`. The 2
 - All tested windows remain inside 2560×1440, 1600×900, and 1280×720 captures.
 - HomuraLog windows are absent from the native draw-pile, map, and pause screens. The smoke harness confirms the expected native screen type and waits for its transition to settle before capturing.
 - Hiding is scoped to HomuraLog: unrelated mod overlays remain visible on the tested native screens.
+- Injected Godot pointer events successfully hit compact branch arrows, compact wheel zoom/drag, a large-view node row, and large-view wheel zoom/drag; each test also verifies the resulting focus, branch, zoom, or pan state.
+- Localized enemy intent is converted to plain text before entering ordinary labels, so Godot tags such as `[font_size]` no longer leak into node details.
 
 ## Usability issues found
 
@@ -25,11 +27,10 @@ Evidence is stored under `%APPDATA%\SlayTheSpire2\HomuraLog\visual-smoke`. The 2
 - The large graph exposes several unlabeled built-in GraphEdit toolbar icons.
 - Recorded intent variables can wrap poorly (`Strategic + Strategic` followed by `5` on a separate line) and remain less understandable than the game's native intent presentation.
 - Other mods can draw transient hints across HomuraLog windows. HomuraLog stays functional, but the combined screen can be visually noisy.
+- Zoomed or dragged compact graph content can move underneath the fixed branch navigator; the controls remain functional, but the overlap makes both layers harder to read.
 
 ## Remaining functional coverage
 
-- Actual pointer hit testing for node rows and arrow buttons.
-- Dragging and wheel zoom in both views.
 - Jump execution from compact details and the large inspector.
 - Delete-node execution and focus fallback.
 - Suppression while the discard-pile screen is open; the current smoke save has an empty discard pile, so the harness records the unmet precondition instead of a false pass.

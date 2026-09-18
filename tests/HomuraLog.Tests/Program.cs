@@ -12,6 +12,11 @@ static EncounterRecord Record(string key = "run:1:jaw_worm") => new()
     StartedAt = DateTimeOffset.UtcNow, LastOpenedAt = DateTimeOffset.UtcNow,
 };
 
+Assert(RichText.ToPlainText("攻势 2[font_size=18]×15 (30)[/font_size]") == "攻势 2×15 (30)",
+    "Localized intent shown in an ordinary Label must not leak Godot rich-text tags.");
+Assert(RichText.ToPlainText("[color=#ff0000][b]Attack[/b][/color]") == "Attack",
+    "Nested localization markup must be stripped without removing its visible text.");
+
 var state = new CombatStateSummary(1, 70, 80, 2, []);
 var record = Record();
 var tree = new TimelineTree(record);

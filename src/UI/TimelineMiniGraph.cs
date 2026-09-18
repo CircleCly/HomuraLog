@@ -40,6 +40,21 @@ internal sealed partial class TimelineMiniGraph : Control
     public event Action<string>? FocusChanged;
     public event Action<string>? MoreBranchesActivated;
 
+    internal string? SmokeFocusedNodeId => _focusedNodeId;
+    internal int SmokeSelectedBranchIndex => _selectedBranchIndex;
+    internal float SmokeZoom => _zoom;
+    internal Vector2 SmokePan => _pan;
+
+    internal Vector2 SmokeNavigationCenter(string direction)
+    {
+        NavigationDirection parsed = Enum.Parse<NavigationDirection>(direction, true);
+        Rect2 rect = BranchButtons().First(button => button.Direction == parsed).Rect;
+        return GetGlobalTransformWithCanvas() * rect.GetCenter();
+    }
+
+    internal Vector2 SmokeCanvasPoint()
+        => GetGlobalTransformWithCanvas() * new Vector2(18, Math.Max(82, Size.Y - 18));
+
     public void RefreshLocalization()
     {
         TooltipText = HomuraText.GraphHelp;

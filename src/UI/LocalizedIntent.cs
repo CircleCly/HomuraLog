@@ -21,11 +21,12 @@ internal static class LocalizedIntent
     {
         try
         {
-            string title = new LocString("intents", intent.TitleKey).GetFormattedText().Trim();
+            string title = RichText.ToPlainText(
+                new LocString("intents", intent.TitleKey).GetFormattedText()).Trim();
             LocString label = new("intents", intent.LabelKey);
             foreach (IntentVariable variable in intent.Variables ?? [])
                 label.AddObj(variable.Name, Parse(variable));
-            string labelText = label.GetFormattedText().Trim();
+            string labelText = RichText.ToPlainText(label.GetFormattedText()).Trim();
             return string.IsNullOrEmpty(labelText) ? title
                 : string.IsNullOrEmpty(title) ? labelText : $"{title} {labelText}";
         }

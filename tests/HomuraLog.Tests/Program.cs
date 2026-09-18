@@ -92,4 +92,26 @@ Assert(fanoutProjection.Children.Any(child => child.Rows.Any(row => row.Node?.Is
     "The current branch must survive branch capping regardless of recency.");
 Assert(fanoutProjection.Children.Any(child => child.Rows.Any(row => row.Node?.Action?.SourceId == "CARD_7")),
     "Non-current mini branches must be selected by most recent visit.");
+
+var forwardRecord = Record("forward-path");
+var forwardWriter = new TimelineTree(forwardRecord);
+TimelineAction forwardA = new(TimelineActionKind.PlayCard, 1, "A", "1");
+TimelineAction forwardB = new(TimelineActionKind.PlayCard, 1, "B", "2");
+TimelineAction forwardChoice = new(TimelineActionKind.CardChoice, 1, "B:CHOICE", Choices: ["C::combat:3::u0"]);
+TimelineNode nodeA = forwardWriter.Append(forwardA, state, DateTimeOffset.UtcNow);
+TimelineNode nodeB = forwardWriter.Append(forwardB, state, DateTimeOffset.UtcNow);
+TimelineNode choiceNode = forwardWriter.Append(forwardChoice, state, DateTimeOffset.UtcNow);
+var siblingWriter = new TimelineTree(forwardRecord);
+TimelineAction siblingAction = new(TimelineActionKind.PlayCard, 1, "SIBLING", "4");
+TimelineNode siblingNode = siblingWriter.Append(siblingAction, state, DateTimeOffset.UtcNow);
+var forwardCursor = new TimelineTree(forwardRecord);
+Assert(forwardCursor.FollowExisting(forwardA), "Forward fixture current node should exist.");
+Assert(forwardCursor.TryGetForwardPath(nodeB.NodeId, out IReadOnlyList<TimelineAction> direct)
+    && direct.SequenceEqual([forwardB]), "Direct child must produce a one-action forward path.");
+Assert(forwardCursor.TryGetForwardPath(choiceNode.NodeId, out IReadOnlyList<TimelineAction> deep)
+    && deep.SequenceEqual([forwardB, forwardChoice]), "Descendant path must preserve action and choice order.");
+Assert(!forwardCursor.TryGetForwardPath(nodeA.NodeId, out _), "The current node is not a forward target.");
+Assert(!forwardCursor.TryGetForwardPath(forwardRecord.Root.NodeId, out _), "An ancestor is not a forward target.");
+Assert(!forwardCursor.TryGetForwardPath(siblingNode.NodeId, out _), "A sibling is not a forward target.");
+Assert(!forwardCursor.TryGetForwardPath("missing", out _), "A missing node is not a forward target.");
 Console.WriteLine("HomuraLog core checks passed.");

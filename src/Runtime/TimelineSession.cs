@@ -62,6 +62,9 @@ internal sealed class TimelineSession : IDisposable
         return found;
     }
 
+    public bool TryGetForwardPath(string nodeId, out IReadOnlyList<TimelineAction> path) =>
+        _tree.TryGetForwardPath(nodeId, out path);
+
     internal void ObserveReplayChoice(TimelineAction choice)
     {
         GameAction? owner = RunManager.Instance.ActionExecutor.CurrentlyRunningAction;

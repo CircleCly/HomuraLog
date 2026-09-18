@@ -1,5 +1,6 @@
 using Godot;
 using HomuraLog.Domain;
+using HomuraLog.UI;
 using MegaCrit.Sts2.Core.Commands;
 using MegaCrit.Sts2.Core.Combat;
 using MegaCrit.Sts2.Core.Context;
@@ -25,20 +26,31 @@ internal static class WorldlineReplayController
 {
     private sealed record ReplayRequest(string EncounterKey, string NodeId, IReadOnlyList<TimelineAction> Path);
     private static ReplayRequest? _pending;
-    private static bool _reloading;
+    private static bool _busy;
 
     public static event Action<string>? StatusChanged;
 
     public static void Request(TimelineSession session, string nodeId)
     {
-        if (_reloading) return;
+        if (_busy)
+        {
+            StatusChanged?.Invoke(HomuraText.ReplayBusy);
+            return;
+        }
+        if (session.TryGetForwardPath(nodeId, out IReadOnlyList<TimelineAction> forwardPath))
+        {
+            _busy = true;
+            StatusChanged?.Invoke(HomuraText.Forwarding(forwardPath.Count));
+            TaskHelper.RunSafely(ReplayFromCurrentAsync(session, nodeId, forwardPath));
+            return;
+        }
         if (!session.TryGetPath(nodeId, out IReadOnlyList<TimelineAction> path) || path.Count == 0)
         {
             StatusChanged?.Invoke("Cannot find a replayable path for this node.");
             return;
         }
         _pending = new ReplayRequest(session.Snapshot.EncounterKey, nodeId, path);
-        _reloading = true;
+        _busy = true;
         session.Abort();
         StatusChanged?.Invoke($"Reloading combat entry · {path.Count} recorded steps");
         TaskHelper.RunSafely(ReloadRunAsync());
@@ -101,34 +113,79 @@ internal static class WorldlineReplayController
 
     private static async Task ReplayAsync(TimelineSession session, ReplayRequest request)
     {
-        using IDisposable replayCommits = session.SuppressReplayCommits();
         try
         {
-            TimelineAction[] executable = request.Path
-                .Where(action => action.Kind != TimelineActionKind.CardChoice).ToArray();
-            Queue<TimelineAction> choices = new(request.Path
-                .Where(action => action.Kind == TimelineActionKind.CardChoice));
-            using IDisposable selector = CardSelectCmd.PushSelector(new ReplayCardSelector(choices, session));
-            for (int index = 0; index < executable.Length; index++)
-            {
-                TimelineAction action = executable[index];
-                StatusChanged?.Invoke($"Replaying {index + 1}/{executable.Length}: {action.SourceId}");
-                await WaitForPlayableState(session.Combat, action);
-                await Execute(session.Combat, action);
-                session.AdvanceReplayCursor(action);
-            }
-            if (choices.Count > 0)
-                throw new InvalidOperationException($"{choices.Count} recorded card choice(s) were not requested by the game.");
+            int executed = await ExecuteRecordedPath(session, request.Path,
+                (current, total, source) => $"Replaying {current}/{total}: {source}");
             StatusChanged?.Invoke($"Reached worldline node {request.NodeId[..Math.Min(8, request.NodeId.Length)]}.");
-            Entry.Logger.Info($"Worldline replay completed node={request.NodeId} actions={executable.Length}.");
+            Entry.Logger.Info($"Worldline replay completed node={request.NodeId} actions={executed}.");
             _pending = null;
-            _reloading = false;
+            _busy = false;
         }
         catch (Exception error)
         {
             Entry.Logger.Error($"Worldline replay stopped safely: {error}");
             Fail($"Replay stopped: {error.Message}");
         }
+    }
+
+    private static async Task ReplayFromCurrentAsync(TimelineSession session, string nodeId,
+        IReadOnlyList<TimelineAction> path)
+    {
+        try
+        {
+            ValidateForwardStart(session, path);
+            int executed = await ExecuteRecordedPath(session, path, HomuraText.ForwardStep);
+            if (!string.Equals(session.Snapshot.CurrentNodeId, nodeId, StringComparison.Ordinal))
+                throw new InvalidOperationException("The recorded actions ended at a different timeline node.");
+            StatusChanged?.Invoke(HomuraText.ForwardReached);
+            Entry.Logger.Info($"Worldline advanced in place node={nodeId} actions={executed}.");
+        }
+        catch (Exception error)
+        {
+            Entry.Logger.Error($"In-place worldline advance stopped safely: {error}");
+            StatusChanged?.Invoke(HomuraText.ForwardFailed(error.Message));
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private static void ValidateForwardStart(TimelineSession session, IReadOnlyList<TimelineAction> path)
+    {
+        if (path.Count == 0 || path[0].Kind == TimelineActionKind.CardChoice)
+            throw new InvalidOperationException("The target has no executable next action.");
+        if (!CombatManager.Instance.IsInProgress
+            || !ReferenceEquals(CombatManager.Instance.DebugOnlyGetState(), session.Combat))
+            throw new InvalidOperationException("The active combat has changed.");
+        Player? player = LocalContext.GetMe(session.Combat);
+        if (player?.PlayerCombatState == null
+            || player.PlayerCombatState.Phase.ToString() != "Play"
+            || RunManager.Instance.ActionExecutor.CurrentlyRunningAction != null)
+            throw new InvalidOperationException("The player cannot act right now.");
+        if (player.PlayerCombatState.TurnNumber != path[0].Turn)
+            throw new InvalidOperationException($"Expected turn {path[0].Turn}, but the game is on turn {player.PlayerCombatState.TurnNumber}.");
+    }
+
+    private static async Task<int> ExecuteRecordedPath(TimelineSession session,
+        IReadOnlyList<TimelineAction> path, Func<int, int, string, string> progressText)
+    {
+        using IDisposable replayCommits = session.SuppressReplayCommits();
+        TimelineAction[] executable = path.Where(action => action.Kind != TimelineActionKind.CardChoice).ToArray();
+        Queue<TimelineAction> choices = new(path.Where(action => action.Kind == TimelineActionKind.CardChoice));
+        using IDisposable selector = CardSelectCmd.PushSelector(new ReplayCardSelector(choices, session));
+        for (int index = 0; index < executable.Length; index++)
+        {
+            TimelineAction action = executable[index];
+            StatusChanged?.Invoke(progressText(index + 1, executable.Length, action.SourceId));
+            await WaitForPlayableState(session.Combat, action);
+            await Execute(session.Combat, action);
+            session.AdvanceReplayCursor(action);
+        }
+        if (choices.Count > 0)
+            throw new InvalidOperationException($"{choices.Count} recorded card choice(s) were not requested by the game.");
+        return executable.Length;
     }
 
 
@@ -237,7 +294,7 @@ internal static class WorldlineReplayController
     {
         StatusChanged?.Invoke(message);
         _pending = null;
-        _reloading = false;
+        _busy = false;
     }
 
     private sealed class ReplayCardSelector(Queue<TimelineAction> choices, TimelineSession session) : ICardSelector

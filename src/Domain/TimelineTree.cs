@@ -51,6 +51,25 @@ public sealed class TimelineTree
         return true;
     }
 
+    public bool TryGetForwardPath(string nodeId, out IReadOnlyList<TimelineAction> path)
+    {
+        List<TimelineAction> actions = [];
+        bool Find(TimelineNode node)
+        {
+            foreach (TimelineNode child in node.Children.Values)
+            {
+                actions.Add(child.Action!);
+                if (child.NodeId == nodeId || Find(child)) return true;
+                actions.RemoveAt(actions.Count - 1);
+            }
+            return false;
+        }
+
+        bool found = nodeId != Current.NodeId && Find(Current);
+        path = found ? actions.ToArray() : [];
+        return found;
+    }
+
     public void RefreshCurrentState(CombatStateSummary state, DateTimeOffset now)
     {
         Current.State = state;

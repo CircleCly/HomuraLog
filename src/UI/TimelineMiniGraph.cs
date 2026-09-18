@@ -7,7 +7,7 @@ namespace HomuraLog.UI;
 /// <summary>A compact, independently laid out viewport over the current timeline neighborhood.</summary>
 internal sealed partial class TimelineMiniGraph : Control
 {
-    private const float MinReadableZoom = 0.78f;
+    private const float MinReadableZoom = 0.9f;
     private readonly List<HitArea> _hitAreas = [];
     private TimelineSnapshot? _snapshot;
     private CompactTimelineLayoutResult? _layout;
@@ -133,12 +133,12 @@ internal sealed partial class TimelineMiniGraph : Control
         MiniTimelineSegment root = MiniTimelineProjector.Create(_snapshot!);
         Font font = RitsuShellTheme.Current.Font.Body;
         return CompactTimelineLayout.Create(root,
-            row => MeasureWidth(RowText(row), font, 14),
-            segment => MeasureWidth(HomuraText.MoreBranches(segment.HiddenBranchCount), font, 13));
+            row => MeasureWidth(RowText(row), font, 16),
+            segment => MeasureWidth(HomuraText.MoreBranches(segment.HiddenBranchCount), font, 14));
     }
 
     private static float MeasureWidth(string text, Font font, int fontSize) =>
-        Math.Clamp(font.GetStringSize(text, HorizontalAlignment.Left, -1, fontSize).X + 24f, 150f, 200f);
+        Math.Clamp(font.GetStringSize(text, HorizontalAlignment.Left, -1, fontSize).X + 24f, 150f, 210f);
 
     private void DrawItem(CompactTimelineItem item, RitsuShellTheme theme)
     {
@@ -147,8 +147,8 @@ internal sealed partial class TimelineMiniGraph : Control
         {
             DrawCard(rect, new Color(theme.Surface.Entry.Bg, 0.96f), new Color("70b7ed"), 2);
             string text = HomuraText.MoreBranches(item.Segment.HiddenBranchCount);
-            DrawString(theme.Font.BodyBold, rect.Position + new Vector2(9, 19), ClipToWidth(text, theme.Font.BodyBold, rect.Size.X - 18, 13),
-                HorizontalAlignment.Center, rect.Size.X - 18, 13, new Color("70b7ed"));
+            DrawString(theme.Font.BodyBold, rect.Position + new Vector2(9, 21), ClipToWidth(text, theme.Font.BodyBold, rect.Size.X - 18, 14),
+                HorizontalAlignment.Center, rect.Size.X - 18, 14, new Color("70b7ed"));
             _hitAreas.Add(new HitArea(rect, item.Id, null, item.Segment.MoreBranchesNodeId, text));
             return;
         }
@@ -157,8 +157,8 @@ internal sealed partial class TimelineMiniGraph : Control
         if (row.IsOmission)
         {
             string omitted = HomuraText.OmittedActions(row.OmittedCount);
-            DrawString(theme.Font.Body, rect.Position + new Vector2(8, 19), ClipToWidth(omitted, theme.Font.Body, rect.Size.X - 16, 13),
-                HorizontalAlignment.Center, rect.Size.X - 16, 13, theme.Text.LabelSecondary);
+            DrawString(theme.Font.Body, rect.Position + new Vector2(8, 21), ClipToWidth(omitted, theme.Font.Body, rect.Size.X - 16, 14),
+                HorizontalAlignment.Center, rect.Size.X - 16, 14, theme.Text.LabelSecondary);
             return;
         }
 
@@ -173,9 +173,9 @@ internal sealed partial class TimelineMiniGraph : Control
         string fullText = RowText(row);
         string prefix = node.IsCurrent ? "▶ " : "";
         string shown = prefix + ClipToWidth(fullText, selected ? theme.Font.BodyBold : theme.Font.Body,
-            rect.Size.X - 18 - MeasureText(prefix, theme.Font.BodyBold, 14), 14);
-        DrawString(selected ? theme.Font.BodyBold : theme.Font.Body, rect.Position + new Vector2(9, 19), shown,
-            HorizontalAlignment.Left, rect.Size.X - 18, 14, selected ? Colors.White : accent);
+            rect.Size.X - 18 - MeasureText(prefix, theme.Font.BodyBold, 16), 16);
+        DrawString(selected ? theme.Font.BodyBold : theme.Font.Body, rect.Position + new Vector2(9, 22), shown,
+            HorizontalAlignment.Left, rect.Size.X - 18, 16, selected ? Colors.White : accent);
         _hitAreas.Add(new HitArea(rect, item.Id, node.NodeId, null, fullText));
     }
 

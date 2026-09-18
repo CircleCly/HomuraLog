@@ -25,12 +25,12 @@ public sealed record CompactTimelineLayoutResult(
 /// </summary>
 public static class CompactTimelineLayout
 {
-    public const float ItemHeight = 27f;
-    public const float ItemGap = 4f;
-    private const float BranchGap = 12f;
-    private const float LaneGap = 22f;
-    private const float SideIndent = 12f;
-    private const float Margin = 12f;
+    public const float ItemHeight = 31f;
+    public const float ItemGap = 3f;
+    private const float BranchGap = 8f;
+    private const float LaneGap = 10f;
+    private const float SideIndent = 8f;
+    private const float Margin = 6f;
 
     public static CompactTimelineLayoutResult Create(
         MiniTimelineSegment root,

@@ -20,7 +20,7 @@ internal sealed partial class HomuraOverlay : CanvasLayer
     private Button? _toggle;
     private Label? _status;
     private TimelineMiniGraph? _miniGraph;
-    private PanelContainer? _miniInspector;
+    private RitsuFloatingWindow? _miniInspector;
     private Label? _details;
     private Button? _miniJump;
     private Button? _fullGraph;
@@ -87,60 +87,6 @@ internal sealed partial class HomuraOverlay : CanvasLayer
         _miniGraph.MoreBranchesActivated += ShowFullGraphAt;
         _content.AddChild(_miniGraph);
 
-        _miniInspector = new PanelContainer
-        {
-            Visible = false,
-            MouseFilter = Control.MouseFilterEnum.Stop,
-            AnchorLeft = 0,
-            AnchorRight = 1,
-            AnchorTop = 1,
-            AnchorBottom = 1,
-            OffsetLeft = 7,
-            OffsetRight = -7,
-            OffsetTop = -122,
-            OffsetBottom = -7,
-        };
-        _miniInspector.AddThemeStyleboxOverride("panel", new StyleBoxFlat
-        {
-            BgColor = new Color(RitsuShellTheme.Current.Surface.Entry.Bg, 0.98f),
-            BorderColor = new Color("71859a"),
-            BorderWidthLeft = 1,
-            BorderWidthTop = 1,
-            BorderWidthRight = 1,
-            BorderWidthBottom = 1,
-            CornerRadiusTopLeft = 7,
-            CornerRadiusTopRight = 7,
-            CornerRadiusBottomLeft = 7,
-            CornerRadiusBottomRight = 7,
-            ContentMarginLeft = 9,
-            ContentMarginRight = 9,
-            ContentMarginTop = 7,
-            ContentMarginBottom = 7,
-        });
-        VBoxContainer inspectorContent = new();
-        inspectorContent.AddThemeConstantOverride("separation", 3);
-        _details = CreateRitsuLabel();
-        _details.SizeFlagsVertical = Control.SizeFlags.ExpandFill;
-        ScrollContainer detailScroll = new()
-        {
-            SizeFlagsVertical = Control.SizeFlags.ExpandFill,
-            HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled,
-        };
-        detailScroll.AddChild(_details);
-        inspectorContent.AddChild(detailScroll);
-        HBoxContainer inspectorActions = new();
-        inspectorActions.AddChild(new Control { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill });
-        _miniJump = new Button { Text = HomuraText.JumpHere, Disabled = true, FocusMode = Control.FocusModeEnum.None };
-        _miniJump.AddThemeFontOverride("font", RitsuShellTheme.Current.Font.Button);
-        _miniJump.Pressed += RequestMiniWorldlineJump;
-        inspectorActions.AddChild(_miniJump);
-        Button closeInspector = new() { Text = "×", FocusMode = Control.FocusModeEnum.None };
-        closeInspector.AddThemeFontOverride("font", RitsuShellTheme.Current.Font.Button);
-        closeInspector.Pressed += () => _miniInspector!.Visible = false;
-        inspectorActions.AddChild(closeInspector);
-        inspectorContent.AddChild(inspectorActions);
-        _miniInspector.AddChild(inspectorContent);
-        _miniGraph.AddChild(_miniInspector);
         RefreshLocalizedChrome();
         Visible = false;
         SetProcess(true);
@@ -173,7 +119,7 @@ internal sealed partial class HomuraOverlay : CanvasLayer
         _session = null;
         _snapshot = null;
         _selectedMiniNodeId = null;
-        if (_miniInspector != null) _miniInspector.Visible = false;
+        DestroyMiniInspector();
         _graphWindow?.QueueFree();
         _graphWindow = null;
         Visible = false;
@@ -218,10 +164,13 @@ internal sealed partial class HomuraOverlay : CanvasLayer
 
     private void ShowNodeDetails(string nodeId)
     {
-        if (_snapshot == null || _details == null) return;
+        if (_snapshot == null) return;
         TimelineNodeSnapshot? node = FindNode(_snapshot.Root, nodeId);
+        if (node == null) return;
+        EnsureMiniInspector();
+        if (_details == null) return;
         _selectedMiniNodeId = node?.NodeId;
-        if (_miniInspector != null) _miniInspector.Visible = node != null;
+        if (_miniInspector != null) _miniInspector.Visible = true;
         if (_miniJump != null)
             _miniJump.Disabled = node?.Action == null || node.NodeId == _snapshot.CurrentNodeId;
         if (node == null || node.State == null)
@@ -238,6 +187,68 @@ internal sealed partial class HomuraOverlay : CanvasLayer
             $"{enemy.ModelId} {enemy.Hp}/{enemy.MaxHp}" + (enemy.Block > 0 ? $" (+{enemy.Block})" : "")));
         _details.Text = $"{HomuraText.Details}: T{node.State.Turn} · {HomuraText.Hp} {node.State.PlayerHp}/{node.State.PlayerMaxHp} · " +
             $"{HomuraText.Energy} {node.State.Energy}\n{HomuraText.EnemyHp}: {enemies}\n{HomuraText.Result}: {ResultText(node.Outcome)}";
+    }
+
+    private void EnsureMiniInspector()
+    {
+        if (_miniInspector != null && GodotObject.IsInstanceValid(_miniInspector)) return;
+        RitsuFloatingWindow inspector = new(new RitsuFloatingWindowOptions
+        {
+            Title = HomuraText.Details,
+            InitialSize = new Vector2(390, 225),
+            MinimumSize = new Vector2(330, 170),
+            MaximumSize = new Vector2(650, 600),
+            FitInitialSizeToContent = false,
+            Movable = true,
+            Resizable = true,
+            Closable = true,
+            StartCentered = false,
+            ConstrainToViewport = true,
+        });
+        inspector.AddThemeFontOverride("font", RitsuShellTheme.Current.Font.Body);
+        VBoxContainer content = new();
+        content.AddThemeConstantOverride("separation", 6);
+        _details = CreateRitsuLabel();
+        _details.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+        _details.SizeFlagsVertical = Control.SizeFlags.ExpandFill;
+        _details.CustomMinimumSize = new Vector2(300, 105);
+        content.AddChild(_details);
+        _miniJump = new Button
+        {
+            Text = HomuraText.JumpHere,
+            Disabled = true,
+            FocusMode = Control.FocusModeEnum.None,
+        };
+        _miniJump.AddThemeFontOverride("font", RitsuShellTheme.Current.Font.Button);
+        _miniJump.Pressed += RequestMiniWorldlineJump;
+        content.AddChild(_miniJump);
+        inspector.SetContent(content);
+        inspector.Position = _panel == null
+            ? new Vector2(470, 180)
+            : _panel.Position + new Vector2(_panel.Size.X + 10, 0);
+        inspector.Closed += (_, _) =>
+        {
+            if (ReferenceEquals(_miniInspector, inspector))
+            {
+                _miniInspector = null;
+                _details = null;
+                _miniJump = null;
+                _selectedMiniNodeId = null;
+            }
+            inspector.QueueFree();
+        };
+        _miniInspector = inspector;
+        AddChild(inspector);
+    }
+
+    private void DestroyMiniInspector()
+    {
+        if (_miniInspector != null && GodotObject.IsInstanceValid(_miniInspector))
+            _miniInspector.QueueFree();
+        _miniInspector = null;
+        _details = null;
+        _miniJump = null;
+        _selectedMiniNodeId = null;
     }
 
     private static TimelineNodeSnapshot? FindNode(TimelineNodeSnapshot node, string nodeId)
@@ -338,6 +349,7 @@ internal sealed partial class HomuraOverlay : CanvasLayer
         if (_session == null) return;
         _graphWindow?.QueueFree();
         _graphWindow = null;
+        DestroyMiniInspector();
         WorldlineReplayController.Request(_session, nodeId);
     }
 
@@ -401,8 +413,12 @@ internal sealed partial class HomuraOverlay : CanvasLayer
             _hiddenForCombatModal = combatModal;
             bool show = !paused && !combatModal;
             if (_panel != null) _panel.Visible = show;
+            if (_miniInspector != null && GodotObject.IsInstanceValid(_miniInspector))
+                _miniInspector.Visible = show;
             if (_graphWindow != null && GodotObject.IsInstanceValid(_graphWindow))
                 _graphWindow.Visible = show;
+            if (show && _selectedMiniNodeId != null && _miniInspector != null)
+                ShowNodeDetails(_selectedMiniNodeId);
         }
         if (!Visible || _snapshot == null) return;
         _badgeRefresh += delta;
@@ -424,6 +440,7 @@ internal sealed partial class HomuraOverlay : CanvasLayer
             var field = typeof(RitsuFloatingWindow).GetField("_title",
                 System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
             if (field?.GetValue(_panel) is Label title) title.Text = HomuraText.Title;
+            if (field?.GetValue(_miniInspector) is Label inspectorTitle) inspectorTitle.Text = HomuraText.Details;
         }
         catch (Exception error) { Entry.Logger.Warn($"Could not refresh localized window title: {error.Message}"); }
         if (_graphWindow != null && GodotObject.IsInstanceValid(_graphWindow))

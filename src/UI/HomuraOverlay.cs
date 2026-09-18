@@ -457,15 +457,26 @@ internal sealed partial class HomuraOverlay : CanvasLayer
         ShowFullGraph();
         await WaitForUiFrames(4);
         _graphWindow?.RunLargeWindowSmokeCheck();
+        bool sharedFocusOpened = _graphWindow?.SmokeSelectedNodeId == _focus.FocusedNodeId
+            && _miniGraph?.SmokeFocusedNodeId == _focus.FocusedNodeId;
+        RecordVisualSmokeResult(sharedFocusOpened, "shared-focus-open-large");
         await CaptureViewport(outputDirectory, "06-large-shared-focus.png");
         await RunLargePointerSmokeChecks(outputDirectory, alternate);
 
         ResetSharedFocusFromLarge();
         await WaitForUiFrames(2);
+        bool largeResetWorked = _focus.FocusedNodeId == _snapshot.CurrentNodeId
+            && _graphWindow?.SmokeSelectedNodeId == _snapshot.CurrentNodeId
+            && _miniGraph?.SmokeFocusedNodeId == _snapshot.CurrentNodeId
+            && Math.Abs((_graphWindow?.SmokeZoom ?? 0f) - 1f) < 0.001f;
+        RecordVisualSmokeResult(largeResetWorked, "large-reset-view-state");
         await CaptureViewport(outputDirectory, "07-large-reset-current.png");
 
         CloseGraphWindow();
         await WaitForUiFrames(2);
+        bool miniResetWorked = _focus.FocusedNodeId == _snapshot.CurrentNodeId
+            && _miniGraph?.SmokeFocusedNodeId == _snapshot.CurrentNodeId;
+        RecordVisualSmokeResult(miniResetWorked, "mini-reset-view-state");
         await CaptureViewport(outputDirectory, "08-mini-reset-current.png");
         await RunMiniPointerSmokeChecks(outputDirectory, fanout);
         await CaptureNativeScreenSuppression(outputDirectory, "mega_view_draw_pile",
@@ -581,6 +592,8 @@ internal sealed partial class HomuraOverlay : CanvasLayer
         await ClickAt(rowPoint);
         bool rowWorked = string.Equals(_focus.FocusedNodeId, alternate.NodeId, StringComparison.Ordinal);
         RecordVisualSmokeResult(rowWorked, "large-node-row-pointer");
+        RecordVisualSmokeResult(_miniGraph?.SmokeFocusedNodeId == alternate.NodeId,
+            "large-node-row-synced-to-mini");
         Entry.Logger.Info($"Visual smoke pointer large-row worked={rowWorked} before={beforeFocus} " +
             $"expected={alternate.NodeId} actual={_focus.FocusedNodeId} point={rowPoint}.");
 

@@ -26,7 +26,7 @@ Evidence is stored under `%APPDATA%\SlayTheSpire2\HomuraLog\visual-smoke`. The 2
 - Focus uses a cyan-white double outline and diamond marker, while the actual player position retains its orange fill and arrow marker. Both states remain visible when they coincide.
 - Opening the large graph temporarily hides the compact window; closing it restores the prior compact visibility state.
 - Jump and delete buttons share availability rules and localized explanations for their disabled states.
-- The built-in GraphEdit toolbar is hidden and replaced by localized zoom, minimap, and Reset View controls.
+- The built-in GraphEdit toolbar is hidden and replaced by localized zoom and Reset View controls.
 - Recorded intents render one structured intent per line instead of joining unrelated intent variables with plus signs.
 - The large inspector uses a more solid backing so text remains legible over the combat scene.
 

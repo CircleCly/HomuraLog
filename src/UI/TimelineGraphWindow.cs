@@ -20,7 +20,6 @@ internal sealed partial class TimelineGraphWindow : CanvasLayer
     private readonly Button _jumpButton;
     private readonly Button _deleteButton;
     private readonly Label _zoomLabel;
-    private readonly Button _minimapButton;
     private readonly Dictionary<string, TimelineNodeSnapshot> _nodes = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> _segmentByNode = new(StringComparer.Ordinal);
     private readonly Dictionary<string, TimelineNodeSnapshot> _segmentTail = new(StringComparer.Ordinal);
@@ -36,6 +35,7 @@ internal sealed partial class TimelineGraphWindow : CanvasLayer
     private bool _layoutDirty;
     private ulong _layoutSaveAt;
     private bool _smokeSuppressRequests;
+    private ulong _centerRequest;
 
     internal string? SmokeLastRequest { get; private set; }
 
@@ -88,10 +88,6 @@ internal sealed partial class TimelineGraphWindow : CanvasLayer
         ApplyButtonFont(zoomIn);
         zoomIn.Pressed += () => ChangeZoom(1.15f);
         toolbar.AddChild(zoomIn);
-        _minimapButton = new Button { Text = HomuraText.Minimap, ToggleMode = true, ButtonPressed = true,
-            TooltipText = HomuraText.Minimap, FocusMode = Control.FocusModeEnum.None };
-        ApplyButtonFont(_minimapButton);
-        toolbar.AddChild(_minimapButton);
         Button center = new() { Text = HomuraText.ResetView, FocusMode = Control.FocusModeEnum.None };
         center.TooltipText = HomuraText.ResetView;
         ApplyButtonFont(center);
@@ -109,14 +105,13 @@ internal sealed partial class TimelineGraphWindow : CanvasLayer
             SizeFlagsVertical = Control.SizeFlags.ExpandFill,
             CustomMinimumSize = new Vector2(430, 340),
             ShowGrid = true,
-            MinimapEnabled = true,
+            MinimapEnabled = false,
             ShowZoomLabel = false,
             ShowMenu = false,
             RightDisconnects = false,
         };
         _graph.NodeSelected += OnNodeSelected;
         _graph.GuiInput += OnGraphGuiInput;
-        _minimapButton.Toggled += enabled => _graph.MinimapEnabled = enabled;
         _arrows = new ArrowOverlay(_graph)
         {
             MouseFilter = Control.MouseFilterEnum.Ignore,
@@ -181,6 +176,15 @@ internal sealed partial class TimelineGraphWindow : CanvasLayer
         .OfType<HBoxContainer>().All(toolbar => !toolbar.Visible);
     internal string SmokeJumpTooltip => _jumpButton.TooltipText;
     internal string SmokeDeleteTooltip => _deleteButton.TooltipText;
+    internal float SmokeFocusedCenterError
+    {
+        get
+        {
+            if (_selectedNodeId == null || !_nodeRows.TryGetValue(_selectedNodeId, out Button? row))
+                return float.PositiveInfinity;
+            return row.GetGlobalRect().GetCenter().DistanceTo(_graph.GetGlobalRect().GetCenter());
+        }
+    }
 
     internal bool PrepareNodeRowPointerTest(string nodeId)
     {
@@ -277,7 +281,7 @@ internal sealed partial class TimelineGraphWindow : CanvasLayer
     {
         if (!_nodes.ContainsKey(nodeId)) return;
         SelectNode(nodeId);
-        if (center) CenterNode(nodeId);
+        if (center) RequestCenterNode(nodeId);
     }
 
     private void Render()
@@ -324,18 +328,18 @@ internal sealed partial class TimelineGraphWindow : CanvasLayer
             ? _selectedNodeId : _snapshot.CurrentNodeId;
         SelectNode(selection);
         string target = selection;
-        Callable.From(() => CenterNode(target)).CallDeferred();
+        RequestCenterNode(target);
     }
 
     private void CenterSelected()
-        => CenterNode(_selectedNodeId ?? _snapshot.CurrentNodeId);
+        => RequestCenterNode(_selectedNodeId ?? _snapshot.CurrentNodeId);
 
     public void ResetView(string nodeId)
     {
         _selectedNodeId = nodeId;
         SelectNode(nodeId);
         _graph.Zoom = 1f;
-        Callable.From(() => CenterNode(nodeId)).CallDeferred();
+        RequestCenterNode(nodeId);
     }
 
     private void CenterNode(string nodeId)
@@ -345,6 +349,30 @@ internal sealed partial class TimelineGraphWindow : CanvasLayer
         GraphNode node = _graph.GetNode<GraphNode>(segmentId);
         _graph.ScrollOffset = node.PositionOffset + node.Size / 2
             - _graph.Size / (2 * Math.Max(_graph.Zoom, 0.01f));
+    }
+
+    private void RequestCenterNode(string nodeId)
+    {
+        ulong request = ++_centerRequest;
+        Callable.From(() =>
+        {
+            if (request != _centerRequest || !IsAvailable) return;
+            CenterNode(nodeId);
+            RefineCenterNode(nodeId, request, 3);
+        }).CallDeferred();
+    }
+
+    private void RefineCenterNode(string nodeId, ulong request, int remainingPasses)
+    {
+        Callable.From(() =>
+        {
+            if (request != _centerRequest || !IsAvailable
+                || !_nodeRows.TryGetValue(nodeId, out Button? row)
+                || !GodotObject.IsInstanceValid(row)) return;
+            Vector2 delta = row.GetGlobalRect().GetCenter() - _graph.GetGlobalRect().GetCenter();
+            _graph.ScrollOffset += delta / Math.Max(_graph.Zoom, 0.01f);
+            if (remainingPasses > 1) RefineCenterNode(nodeId, request, remainingPasses - 1);
+        }).CallDeferred();
     }
 
     private void ApplyDefaultLargeBounds()
@@ -607,7 +635,7 @@ internal sealed partial class TimelineGraphWindow : CanvasLayer
     {
         string? selected = _selectedNodeId;
         _graph.Zoom = Math.Clamp(_graph.Zoom * factor, 0.25f, 2f);
-        if (selected != null) Callable.From(() => CenterNode(selected)).CallDeferred();
+        if (selected != null) RequestCenterNode(selected);
     }
 
     private void HideBuiltInGraphToolbar()

@@ -53,7 +53,6 @@ internal static class HomuraText
     public static string DragForMore => Chinese ? "拖动画布查看更多" : "Drag the canvas to see more";
     public static string ZoomOut => Chinese ? "缩小" : "Zoom out";
     public static string ZoomIn => Chinese ? "放大" : "Zoom in";
-    public static string Minimap => Chinese ? "小地图" : "Minimap";
     public static string UnknownIntent => Chinese ? "未知意图" : "Unknown intent";
     public static string GraphHelp => Chinese ? "滚轮缩放 · 拖动空白处平移 · 点击节点查看详情" : "Wheel to zoom · drag the background to pan · click a node for details";
     public static string LargeTreeHint(int shown, int total) => Chinese

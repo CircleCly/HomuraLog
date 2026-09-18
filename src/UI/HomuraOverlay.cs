@@ -487,6 +487,8 @@ internal sealed partial class HomuraOverlay : CanvasLayer
         bool sharedFocusOpened = _graphWindow?.SmokeSelectedNodeId == _focus.FocusedNodeId
             && _miniGraph?.SmokeFocusedNodeId == _focus.FocusedNodeId;
         RecordVisualSmokeResult(sharedFocusOpened, "shared-focus-open-large");
+        RecordVisualSmokeResult((_graphWindow?.SmokeFocusedCenterError ?? float.PositiveInfinity) < 12f,
+            "shared-focus-open-large-centered");
         await CaptureViewport(outputDirectory, "06-large-shared-focus.png");
         await RunLargePointerSmokeChecks(outputDirectory, alternate);
 

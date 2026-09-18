@@ -27,7 +27,7 @@ Screenshots are written under `%APPDATA%\SlayTheSpire2\HomuraLog\visual-smoke\<t
 
 The capture uses Godot's rendered viewport after `FramePostDraw`. It does not depend on desktop focus, screen coordinates, Steam screenshots, or an external capture tool. It therefore continues to work when the game window is occluded.
 
-In addition to screenshot state, the suite asserts that opening the large view hides the compact window, closing it restores it, the compact canvas retains its local navigation safe area and readable automatic zoom, and the large view hides GraphEdit's built-in toolbar in favor of localized controls.
+In addition to screenshot state, the suite asserts that opening the large view hides the compact window, preserves and precisely centers the compact view's focused node, closing it restores the compact window, the compact canvas retains its local navigation safe area and readable automatic zoom, and the large view hides GraphEdit's built-in toolbar in favor of localized controls.
 
 The runner waits for an explicit assertion summary, not merely for the last screenshot. Missing fixtures, failed required screen transitions, a visible HomuraLog panel over a native modal, failed pointer state changes, or fewer than 15 required screenshots produce a non-zero script exit code. The discard-pile capture is optional when the loaded combat has an empty discard pile and is logged as an unmet fixture precondition instead of a pass.
 

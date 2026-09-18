@@ -1,6 +1,6 @@
 # Visual review findings
 
-Evidence is stored under `%APPDATA%\SlayTheSpire2\HomuraLog\visual-smoke`. The 20260917 runs cover Simplified Chinese and English at 2560×1440, plus live 1600×900 and 1280×720 captures.
+Evidence is stored under `%APPDATA%\SlayTheSpire2\HomuraLog\visual-smoke`. The 20260917–20260918 runs cover Simplified Chinese and English at 2560×1440, plus live 1600×900 and 1280×720 captures.
 
 ## Confirmed functional
 
@@ -30,6 +30,6 @@ Evidence is stored under `%APPDATA%\SlayTheSpire2\HomuraLog\visual-smoke`. The 2
 - Other mods can draw transient hints across HomuraLog windows. HomuraLog stays functional, but the combined screen can be visually noisy.
 - Zoomed or dragged compact graph content can move underneath the fixed branch navigator; the controls remain functional, but the overlap makes both layers harder to read.
 
-## Remaining functional coverage
+## Hardware verification limit
 
-- A second native display/UI-scale configuration, rather than only resizing the same Godot logical viewport.
+- This machine exposes one physical 2560×1440 display plus virtual display adapters without usable native dimensions. A second physical display/Windows UI-scale configuration cannot be verified here; the 1600×900 and 1280×720 passes resize the live Godot viewport and must not be represented as that hardware test.

@@ -139,7 +139,9 @@ float[] branchCenters = twoBranchLayout.Items.Where(item => item.Row?.IsBranchFi
     .Select(item => item.X + 80).Order().ToArray();
 Assert(branchCenters.Length == 2 && branchCenters[0] < focusCenter && branchCenters[1] > focusCenter,
     "Two branches must occupy opposite sides of the focused node.");
-Assert(branchCenters[1] - branchCenters[0] >= 2 * (160 + 36),
+CompactTimelineItem[] twoBranchItems = twoBranchLayout.Items
+    .Where(item => item.Row?.IsBranchFirstStep == true).ToArray();
+Assert(twoBranchItems.Max(item => item.X + item.Width) - twoBranchItems.Min(item => item.X) >= 520,
     "Two branches should use the available horizontal space instead of clustering centrally.");
 
 CompactTimelineLayoutResult compactFanout = CompactTimelineLayout.Create(
@@ -158,7 +160,18 @@ for (int right = left + 1; right < compactItems.Length; right++)
 int fanoutLanes = compactItems.Where(item => !item.IsMoreBranches)
     .Select(item => MathF.Round(item.X)).Distinct().Count();
 Assert(fanoutLanes <= 3,
-    "A six-way decision must use the center, left, and right lanes instead of six leaf columns.");
+    "A three-way preview must use exactly the left, center, and right fanout lanes.");
+float[] threeBranchTops = compactItems.Where(item => item.Row?.IsBranchFirstStep == true)
+    .Select(item => item.Y).ToArray();
+Assert(threeBranchTops.Length == 3 && threeBranchTops.Distinct().Count() == 1,
+    "All three immediate branches must start on the same horizontal level.");
+float[] threeBranchCenters = compactItems.Where(item => item.Row?.IsBranchFirstStep == true)
+    .Select(item => item.X + item.Width / 2).Order().ToArray();
+float threeFocusCenter = compactItems.Single(item => item.Row?.IsFocused == true).X + 90;
+Assert(threeBranchCenters[0] < threeFocusCenter
+    && Math.Abs(threeBranchCenters[1] - threeFocusCenter) < 0.1f
+    && threeBranchCenters[2] > threeFocusCenter,
+    "Three branches must form a true left-center-right split around the focus.");
 int projectedItems = FlattenMini(fanoutProjection.Root).Sum(segment => segment.Rows.Count
     + (segment.HiddenBranchCount > 0 ? 1 : 0));
 Assert(compactItems.Length == projectedItems,

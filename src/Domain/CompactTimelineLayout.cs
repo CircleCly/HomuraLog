@@ -29,7 +29,7 @@ public static class CompactTimelineLayout
     public const float ItemGap = 3f;
     private const float BranchGap = 8f;
     private const float LaneGap = 10f;
-    private const float TwoBranchLaneGap = 36f;
+    private const float PreferredFanoutWidth = 520f;
     private const float SideIndent = 8f;
     private const float Margin = 6f;
 
@@ -116,13 +116,11 @@ public static class CompactTimelineLayout
             PlaceItems(segment, x, y);
             float childY = y + size.OwnHeight + BranchGap;
             MiniTimelineSegment? spineChild = segment.Children.FirstOrDefault(ContainsFocus);
-            if (spineChild == null && segment.Children.Count == 1)
+            if (spineChild == null && segment.Children.Count is >= 1 and <= 3)
             {
-                PlaceSpine(segment.Children[0], childY);
+                PlaceFanout(segment.Children, childY);
                 return;
             }
-            float laneGap = spineChild == null && segment.Children.Count == 2
-                ? TwoBranchLaneGap : LaneGap;
             int sideIndex = 0;
             foreach (MiniTimelineSegment child in segment.Children.Where(child => !ReferenceEquals(child, spineChild)))
             {
@@ -131,17 +129,38 @@ public static class CompactTimelineLayout
                 if (left)
                 {
                     float branchY = Math.Max(requestedY, leftCursor);
-                    PlaceSide(child, -laneGap, branchY, -1);
+                    PlaceSide(child, -LaneGap, branchY, -1);
                     leftCursor = branchY + metrics[child.Id].SideHeight + BranchGap;
                 }
                 else
                 {
                     float branchY = Math.Max(requestedY, rightCursor);
-                    PlaceSide(child, centerWidth + laneGap, branchY, 1);
+                    PlaceSide(child, centerWidth + LaneGap, branchY, 1);
                     rightCursor = branchY + metrics[child.Id].SideHeight + BranchGap;
                 }
             }
             if (spineChild != null) PlaceSpine(spineChild, childY);
+        }
+
+        void PlaceFanout(IReadOnlyList<MiniTimelineSegment> children, float y)
+        {
+            if (children.Count == 1)
+            {
+                SegmentMetrics only = metrics[children[0].Id];
+                PlaceItems(children[0], (centerWidth - only.Width) / 2, y);
+                return;
+            }
+            float widths = children.Sum(child => metrics[child.Id].Width);
+            float minimumGap = children.Count == 2 ? 18f : 10f;
+            float fanoutWidth = Math.Max(PreferredFanoutWidth,
+                widths + minimumGap * (children.Count - 1));
+            float gap = (fanoutWidth - widths) / (children.Count - 1);
+            float x = centerWidth / 2 - fanoutWidth / 2;
+            foreach (MiniTimelineSegment child in children)
+            {
+                PlaceItems(child, x, y);
+                x += metrics[child.Id].Width + gap;
+            }
         }
 
         void PlaceSide(MiniTimelineSegment segment, float anchorX, float y, int direction)

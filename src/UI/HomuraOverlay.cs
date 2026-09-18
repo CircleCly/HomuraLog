@@ -5,7 +5,8 @@ using MegaCrit.Sts2.Core.Combat;
 using MegaCrit.Sts2.Core.Entities.Multiplayer;
 using MegaCrit.Sts2.Core.Nodes.Combat;
 using MegaCrit.Sts2.Core.Nodes.Potions;
-using MegaCrit.Sts2.Core.Nodes.Screens;
+using MegaCrit.Sts2.Core.Nodes.Rooms;
+using MegaCrit.Sts2.Core.Nodes.Screens.ScreenContext;
 using MegaCrit.Sts2.Core.Runs;
 using STS2RitsuLib.Ui.Controls;
 using STS2RitsuLib.Ui.Shell.Theme;
@@ -392,8 +393,8 @@ internal sealed partial class HomuraOverlay : CanvasLayer
             return;
         }
         bool paused = RunManager.Instance.IsPaused;
-        // Deck, draw-pile and discard-pile screens hide the combat hand. Treat that as
-        // a modal combat screen and keep the observational overlay out of the way.
+        // Only display over the actual combat room. The game's active-screen context
+        // covers pile/deck views, the map, inspect screens, capstones, and mod screens.
         bool combatModal = IsCombatModalOpen();
         if (paused != _hiddenForPause || combatModal != _hiddenForCombatModal)
         {
@@ -470,11 +471,7 @@ internal sealed partial class HomuraOverlay : CanvasLayer
     private bool IsCombatModalOpen()
     {
         if (NPlayerHand.Instance == null || !NPlayerHand.Instance.IsVisibleInTree()) return true;
-        Node root = GetTree().Root;
-        return root.FindChildren("*", nameof(NCardPileScreen), true, false)
-                .OfType<Control>().Any(screen => screen.IsVisibleInTree())
-            || root.FindChildren("*", nameof(NDeckViewScreen), true, false)
-                .OfType<Control>().Any(screen => screen.IsVisibleInTree());
+        return ActiveScreenContext.Instance.GetCurrentScreen() is not NCombatRoom;
     }
 
     private void RefreshCardBadges()

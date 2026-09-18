@@ -183,23 +183,26 @@ internal sealed partial class HomuraOverlay : CanvasLayer
         if (node == null) return;
         EnsureMiniInspector();
         if (_details == null) return;
-        _selectedMiniNodeId = node?.NodeId;
+        _selectedMiniNodeId = node.NodeId;
         if (_miniInspector != null) _miniInspector.Visible = true;
         if (_miniJump != null)
-            _miniJump.Disabled = node?.Action == null || node.NodeId == _snapshot.CurrentNodeId;
-        if (node == null || node.State == null)
+            _miniJump.Disabled = node.Action == null || node.NodeId == _snapshot.CurrentNodeId;
+        string action = node.Action == null ? HomuraText.Root : ActionText(node.Action);
+        string context = $"{action}\n{HomuraText.Visits(node.Visits)}";
+        if (node.State == null)
         {
-            _details.Text = HomuraText.Details + ": " + HomuraText.None;
+            _details.Text = $"{context}\n{HomuraText.Details}: {HomuraText.None}";
             return;
         }
         if (node.State.PlayerBlock >= 0)
         {
-            _details.Text = FormatRichDetails(node.State, node.IsCurrent) + $"\n{HomuraText.Result}: {ResultText(node.Outcome)}";
+            _details.Text = $"{context}\n\n{FormatRichDetails(node.State, node.IsCurrent)}" +
+                $"\n{HomuraText.Result}: {ResultText(node.Outcome)}";
             return;
         }
         string enemies = string.Join(", ", node.State.Enemies.Select(enemy =>
             $"{LocalizedModelNames.Monster(enemy.ModelId)} {enemy.Hp}/{enemy.MaxHp}" + (enemy.Block > 0 ? $" (+{enemy.Block})" : "")));
-        _details.Text = $"{HomuraText.Details}: T{node.State.Turn} · {HomuraText.Hp} {node.State.PlayerHp}/{node.State.PlayerMaxHp} · " +
+        _details.Text = $"{context}\n\n{HomuraText.Details}: T{node.State.Turn} · {HomuraText.Hp} {node.State.PlayerHp}/{node.State.PlayerMaxHp} · " +
             $"{HomuraText.Energy} {node.State.Energy}\n{HomuraText.EnemyHp}: {enemies}\n{HomuraText.Result}: {ResultText(node.Outcome)}";
     }
 
@@ -411,20 +414,24 @@ internal sealed partial class HomuraOverlay : CanvasLayer
             SetSharedFocus(alternate.NodeId, FocusSource.External);
             await WaitForUiFrames(2);
             await CaptureViewport(outputDirectory, "02-mini-alternate-focus.png");
+            ShowNodeDetails(alternate.NodeId);
+            await WaitForUiFrames(2);
+            await CaptureViewport(outputDirectory, "03-mini-node-details.png");
+            DestroyMiniInspector();
         }
 
         ShowFullGraph();
         await WaitForUiFrames(4);
         _graphWindow?.RunLargeWindowSmokeCheck();
-        await CaptureViewport(outputDirectory, "03-large-shared-focus.png");
+        await CaptureViewport(outputDirectory, "04-large-shared-focus.png");
 
         ResetSharedFocusFromLarge();
         await WaitForUiFrames(2);
-        await CaptureViewport(outputDirectory, "04-large-reset-current.png");
+        await CaptureViewport(outputDirectory, "05-large-reset-current.png");
 
         CloseGraphWindow();
         await WaitForUiFrames(2);
-        await CaptureViewport(outputDirectory, "05-mini-reset-current.png");
+        await CaptureViewport(outputDirectory, "06-mini-reset-current.png");
         Entry.Logger.Info($"Visual smoke check captured screenshots directory={outputDirectory}.");
     }
 
@@ -518,7 +525,7 @@ internal sealed partial class HomuraOverlay : CanvasLayer
         TimelineOutcome.Victory => $"★ {HomuraText.OutcomeVictory}",
         TimelineOutcome.Defeat => $"☠ {HomuraText.OutcomeDefeat}",
         TimelineOutcome.Aborted => $"↺ {HomuraText.OutcomeAborted}",
-        _ => "—",
+        _ => HomuraText.OutcomeOngoing,
     };
 
     private enum FocusSource { Mini, Large, External }

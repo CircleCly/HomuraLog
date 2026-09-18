@@ -1,14 +1,15 @@
 # Visual smoke testing
 
-Run `powershell -NoProfile -ExecutionPolicy Bypass -File tools/run-visual-smoke.ps1` while Slay the Spire 2 is closed. The explicit process-only execution-policy override is needed on machines that disable local PowerShell scripts. The script builds and deploys the mod, launches the installed game with `--homuralog-visual-smoke`, loads the current run save through the existing smoke path, and waits for the mod to capture five full-viewport PNGs.
+Run `powershell -NoProfile -ExecutionPolicy Bypass -File tools/run-visual-smoke.ps1` while Slay the Spire 2 is closed. The explicit process-only execution-policy override is needed on machines that disable local PowerShell scripts. The script builds and deploys the mod, launches the installed game with `--homuralog-visual-smoke`, loads the current run save through the existing smoke path, and waits for the mod to capture six full-viewport PNGs.
 
 Screenshots are written under `%APPDATA%\SlayTheSpire2\HomuraLog\visual-smoke\<timestamp>`:
 
 1. compact view focused on the player's current node;
 2. compact view focused on a different explored branch;
-3. large view opened with the same shared focus;
-4. large view after Reset View returns focus to the current node;
-5. compact view after the same reset, proving cross-view synchronization.
+3. the compact node-details window for that explored branch, including its jump action;
+4. large view opened with the same shared focus;
+5. large view after Reset View returns focus to the current node;
+6. compact view after the same reset, proving cross-view synchronization.
 
 The capture uses Godot's rendered viewport after `FramePostDraw`. It does not depend on desktop focus, screen coordinates, Steam screenshots, or an external capture tool. It therefore continues to work when the game window is occluded.
 
@@ -22,7 +23,8 @@ The capture uses Godot's rendered viewport after `FramePostDraw`. It does not de
 - Chinese and English labels contain no raw enum values or model IDs.
 - The large window remains within the viewport and leaves game content visible around it.
 - Jump and delete actions are visibly enabled only when valid.
+- The compact details window remains readable and its jump target matches the focused node.
 
-Run the suite once in Simplified Chinese and once in English. For resolution coverage, change the game's resolution before each run; screenshots preserve the actual rendered viewport size. Keep at least one save at a decision point with three or more explored branches for fan-out coverage.
+Run the suite once in Simplified Chinese and once in English. For resolution coverage, change the game's resolution in its settings before each run; the game's fullscreen settings override command-line `--resolution`, so command-line size arguments are not valid evidence. Screenshots preserve the actual rendered viewport size. Keep at least one save at a decision point with three or more explored branches for fan-out coverage.
 
 This is a visual smoke suite, not an input automation suite. Manual checks are still required for pointer hit targets, drag/zoom feel, jump execution, and modal suppression over draw/discard/map screens.

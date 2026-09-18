@@ -194,9 +194,13 @@ float[] branchCenters = twoBranchLayout.Items.Where(item => item.Row?.IsBranchFi
 Assert(branchCenters.Length == 2 && branchCenters[0] < focusCenter && branchCenters[1] > focusCenter,
     "Two branches must occupy opposite sides of the focused node.");
 CompactTimelineItem[] twoBranchItems = twoBranchLayout.Items
-    .Where(item => item.Row?.IsBranchFirstStep == true).ToArray();
-Assert(twoBranchItems.Max(item => item.X + item.Width) - twoBranchItems.Min(item => item.X) >= 520,
-    "Two branches should use the available horizontal space instead of clustering centrally.");
+    .Where(item => item.Row?.IsBranchFirstStep == true).OrderBy(item => item.X).ToArray();
+float twoBranchSpan = twoBranchItems.Max(item => item.X + item.Width)
+    - twoBranchItems.Min(item => item.X);
+float twoBranchGap = twoBranchItems[1].X
+    - (twoBranchItems[0].X + twoBranchItems[0].Width);
+Assert(Math.Abs(twoBranchSpan - 326) < 0.1f && Math.Abs(twoBranchGap - 6) < 0.1f,
+    "Two branches must pack their measured widths around the focus with only a compact connector gap.");
 
 CompactTimelineLayoutResult compactFanout = CompactTimelineLayout.Create(
     fanoutProjection.Root, _ => 180, _ => 180);

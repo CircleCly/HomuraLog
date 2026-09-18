@@ -34,6 +34,7 @@ public static class CompactTimelineLayout
     private const float BranchGap = 8f;
     private const float LaneGap = 10f;
     private const float PreferredFanoutWidth = 520f;
+    private const float TwoBranchGap = 6f;
     private const float SideIndent = 8f;
     private const float Margin = 6f;
 
@@ -166,9 +167,15 @@ public static class CompactTimelineLayout
                 return;
             }
             float widths = children.Sum(child => metrics[child.Id].Width);
-            float minimumGap = children.Count == 2 ? 18f : 10f;
-            float fanoutWidth = Math.Max(PreferredFanoutWidth,
-                widths + minimumGap * (children.Count - 1));
+            // Two branches need to read as a split without sacrificing their text at the
+            // narrow mini-window edges. Pack their measured boxes together around the
+            // focus; the connector still makes the left/right relationship explicit.
+            // Three branches retain the wider, true left/centre/right fanout.
+            float minimumGap = children.Count == 2 ? TwoBranchGap : 10f;
+            float measuredWidth = widths + minimumGap * (children.Count - 1);
+            float fanoutWidth = children.Count == 2
+                ? measuredWidth
+                : Math.Max(PreferredFanoutWidth, measuredWidth);
             float gap = (fanoutWidth - widths) / (children.Count - 1);
             float x = centerWidth / 2 - fanoutWidth / 2;
             foreach (MiniTimelineSegment child in children)

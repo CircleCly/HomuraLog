@@ -26,6 +26,7 @@ internal sealed partial class HomuraOverlay : CanvasLayer
     private Button? _fullGraph;
     private Button? _resetMini;
     private TimelineGraphWindow? _graphWindow;
+    private readonly TimelineFocusState _focus = new();
     private TimelineSession? _session;
     private TimelineSnapshot? _snapshot;
     private string? _selectedMiniNodeId;
@@ -75,7 +76,7 @@ internal sealed partial class HomuraOverlay : CanvasLayer
         header.AddChild(_fullGraph);
         _resetMini = new Button { Text = HomuraText.ResetView, FocusMode = Control.FocusModeEnum.None };
         _resetMini.AddThemeFontOverride("font", RitsuShellTheme.Current.Font.Button);
-        _resetMini.Pressed += () => _miniGraph?.ResetToCurrent();
+        _resetMini.Pressed += ResetSharedFocusFromMini;
         header.AddChild(_resetMini);
 
         _miniGraph = new TimelineMiniGraph
@@ -83,8 +84,13 @@ internal sealed partial class HomuraOverlay : CanvasLayer
             SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
             SizeFlagsVertical = Control.SizeFlags.ExpandFill,
         };
+        _miniGraph.FocusChanged += nodeId => SetSharedFocus(nodeId, FocusSource.Mini);
         _miniGraph.NodeActivated += ShowNodeDetails;
-        _miniGraph.MoreBranchesActivated += ShowFullGraphAt;
+        _miniGraph.MoreBranchesActivated += nodeId =>
+        {
+            SetSharedFocus(nodeId, FocusSource.Mini);
+            ShowFullGraphAt(nodeId);
+        };
         _content.AddChild(_miniGraph);
 
         RefreshLocalizedChrome();
@@ -118,6 +124,7 @@ internal sealed partial class HomuraOverlay : CanvasLayer
         if (_session != null) _session.Changed -= OnChanged;
         _session = null;
         _snapshot = null;
+        _focus.Clear();
         _selectedMiniNodeId = null;
         DestroyMiniInspector();
         CloseGraphWindow();
@@ -139,11 +146,16 @@ internal sealed partial class HomuraOverlay : CanvasLayer
 
     private void OnChanged(TimelineSnapshot snapshot)
     {
+        string? previousFocus = _focus.FocusedNodeId;
         _snapshot = snapshot;
+        _focus.UpdateSnapshot(snapshot);
+        string focusedNodeId = _focus.FocusedNodeId ?? snapshot.CurrentNodeId;
+        bool focusChanged = !string.Equals(previousFocus, focusedNodeId, StringComparison.Ordinal);
         Visible = true;
         Render();
+        if (focusChanged) _miniGraph?.SetFocusedNode(focusedNodeId);
         if (_graphWindow != null && GodotObject.IsInstanceValid(_graphWindow) && _graphWindow.IsAvailable)
-            _graphWindow.UpdateSnapshot(snapshot);
+            _graphWindow.UpdateSnapshot(snapshot, focusedNodeId);
         else
             _graphWindow = null;
         RefreshCardBadges();
@@ -154,6 +166,7 @@ internal sealed partial class HomuraOverlay : CanvasLayer
         if (_snapshot == null || _status == null) return;
         _status.Text = HomuraText.Nodes(_snapshot.TotalNodes);
         _miniGraph?.SetSnapshot(_snapshot);
+        if (_focus.FocusedNodeId != null) _miniGraph?.SetFocusedNode(_focus.FocusedNodeId, false);
         if (_miniInspector?.Visible == true && _selectedMiniNodeId != null)
         {
             if (FindNode(_snapshot.Root, _selectedMiniNodeId) != null) ShowNodeDetails(_selectedMiniNodeId);
@@ -310,23 +323,23 @@ internal sealed partial class HomuraOverlay : CanvasLayer
     private void ShowFullGraphAt(string? focusNodeId)
     {
         if (_snapshot == null) return;
+        if (focusNodeId != null) SetSharedFocus(focusNodeId, FocusSource.External);
+        string target = _focus.FocusedNodeId ?? _snapshot.CurrentNodeId;
         if (_graphWindow != null && GodotObject.IsInstanceValid(_graphWindow) && _graphWindow.IsAvailable)
         {
-            _graphWindow.UpdateSnapshot(_snapshot);
+            _graphWindow.UpdateSnapshot(_snapshot, target);
             _graphWindow.Visible = true;
-            if (focusNodeId != null)
+            TimelineGraphWindow graph = _graphWindow;
+            Callable.From(() =>
             {
-                string target = focusNodeId;
-                TimelineGraphWindow graph = _graphWindow;
-                Callable.From(() =>
-                {
-                    if (GodotObject.IsInstanceValid(graph) && graph.IsAvailable) graph.FocusNode(target);
-                }).CallDeferred();
-            }
+                if (GodotObject.IsInstanceValid(graph) && graph.IsAvailable) graph.SetFocusedNode(target);
+            }).CallDeferred();
             return;
         }
         _graphWindow = null;
-        TimelineGraphWindow created = new(_snapshot) { Name = "HomuraTimelineGraph" };
+        TimelineGraphWindow created = new(_snapshot, target) { Name = "HomuraTimelineGraph" };
+        created.FocusChanged += nodeId => SetSharedFocus(nodeId, FocusSource.Large);
+        created.ResetViewRequested += ResetSharedFocusFromLarge;
         created.JumpRequested += nodeId => SubmitWorldlineJump(nodeId, "large-view");
         created.DeleteRequested += DeleteWorldlineNode;
         created.Closed += () =>
@@ -335,14 +348,34 @@ internal sealed partial class HomuraOverlay : CanvasLayer
         };
         _graphWindow = created;
         AddChild(created);
-        if (focusNodeId != null)
-        {
-            string target = focusNodeId;
-            Callable.From(() =>
-            {
-                if (GodotObject.IsInstanceValid(created) && created.IsAvailable) created.FocusNode(target);
-            }).CallDeferred();
-        }
+    }
+
+    private void SetSharedFocus(string nodeId, FocusSource source)
+    {
+        if (_snapshot == null || !_focus.TrySet(_snapshot, nodeId)) return;
+        if (source != FocusSource.Mini) _miniGraph?.SetFocusedNode(nodeId);
+        if (source != FocusSource.Large && _graphWindow != null
+            && GodotObject.IsInstanceValid(_graphWindow) && _graphWindow.IsAvailable)
+            _graphWindow.SetFocusedNode(nodeId);
+        if (_miniInspector?.Visible == true) ShowNodeDetails(nodeId);
+    }
+
+    private void ResetSharedFocusFromMini()
+    {
+        if (_snapshot == null) return;
+        string nodeId = _focus.Reset(_snapshot);
+        _miniGraph?.ResetView(nodeId);
+        if (_graphWindow != null && GodotObject.IsInstanceValid(_graphWindow) && _graphWindow.IsAvailable)
+            _graphWindow.SetFocusedNode(nodeId);
+    }
+
+    private void ResetSharedFocusFromLarge()
+    {
+        if (_snapshot == null) return;
+        string nodeId = _focus.Reset(_snapshot);
+        _miniGraph?.SetFocusedNode(nodeId);
+        if (_graphWindow != null && GodotObject.IsInstanceValid(_graphWindow) && _graphWindow.IsAvailable)
+            _graphWindow.ResetView(nodeId);
     }
 
     private void DeleteWorldlineNode(string nodeId)
@@ -407,6 +440,8 @@ internal sealed partial class HomuraOverlay : CanvasLayer
         TimelineOutcome.Aborted => $"↺ {HomuraText.OutcomeAborted}",
         _ => "—",
     };
+
+    private enum FocusSource { Mini, Large, External }
 
     public override void _Input(InputEvent inputEvent)
     {

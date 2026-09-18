@@ -44,6 +44,39 @@ Assert(!deleteTree.Remove(deleteRecord.Root.NodeId), "The timeline root must rem
 TimelineAction choice = new(TimelineActionKind.CardChoice, 1, "DISCOVERY", Choices: ["BASH#0", "DEFEND#1"]);
 Assert(choice.Key != (choice with { Choices = ["DEFEND#1", "BASH#0"] }).Key, "Choice order is part of a worldline.");
 
+var focusRecord = Record("shared-focus");
+var focusWriter = new TimelineTree(focusRecord);
+TimelineNode focusFirst = focusWriter.Append(strikeA, state, DateTimeOffset.UtcNow);
+TimelineNode focusSecond = focusWriter.Append(
+    new TimelineAction(TimelineActionKind.EndTurn, 1, "END_TURN"), state, DateTimeOffset.UtcNow);
+var focusAtRoot = new TimelineTree(focusRecord);
+TimelineSnapshot focusRootSnapshot = focusAtRoot.Snapshot();
+var focusState = new TimelineFocusState();
+focusState.UpdateSnapshot(focusRootSnapshot);
+Assert(focusState.FocusedNodeId == focusRootSnapshot.CurrentNodeId,
+    "Shared focus must initialize at the player's current node.");
+Assert(focusState.TrySet(focusRootSnapshot, focusSecond.NodeId),
+    "Either timeline view must be able to focus any existing node.");
+focusState.UpdateSnapshot(focusAtRoot.Snapshot());
+Assert(focusState.FocusedNodeId == focusSecond.NodeId,
+    "Refreshing the same player position must retain the shared browsing focus.");
+Assert(focusAtRoot.FollowExisting(strikeA), "Shared-focus fixture path should exist.");
+focusState.UpdateSnapshot(focusAtRoot.Snapshot());
+Assert(focusState.FocusedNodeId == focusFirst.NodeId,
+    "When the player position changes, shared focus must automatically follow it.");
+Assert(!focusState.TrySet(focusAtRoot.Snapshot(), "missing-node"),
+    "A stale node id must not replace the valid shared focus.");
+Assert(focusState.TrySet(focusAtRoot.Snapshot(), focusSecond.NodeId),
+    "A descendant may be selected while the player remains at its parent.");
+Assert(focusAtRoot.Remove(focusSecond.NodeId), "Shared-focus deletion fixture should remove the focused node.");
+focusState.UpdateSnapshot(focusAtRoot.Snapshot());
+Assert(focusState.FocusedNodeId == focusFirst.NodeId,
+    "Deleting the focused node must fall back to the player's current node.");
+Assert(focusState.Reset(focusAtRoot.Snapshot()) == focusFirst.NodeId,
+    "Reset View must restore focus to the player's current node.");
+focusState.Clear();
+Assert(focusState.FocusedNodeId == null, "Unbinding combat must clear transient shared focus.");
+
 string directory = Path.Combine(Path.GetTempPath(), "HomuraLogTests", Guid.NewGuid().ToString("N"));
 var store = new TimelineStore(directory);
 store.Save(record);

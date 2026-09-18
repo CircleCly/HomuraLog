@@ -19,7 +19,6 @@ internal sealed partial class TimelineMiniGraph : Control
     private int _selectedBranchIndex;
     private int _branchWindowStart;
     private MiniTimelineProjection? _projection;
-    private string? _lastCurrentNodeId;
     private string? _hoveredItemId;
     private Vector2 _hoverPosition;
     private Vector2 _pan;
@@ -38,6 +37,7 @@ internal sealed partial class TimelineMiniGraph : Control
     }
 
     public event Action<string>? NodeActivated;
+    public event Action<string>? FocusChanged;
     public event Action<string>? MoreBranchesActivated;
 
     public void RefreshLocalization()
@@ -47,23 +47,36 @@ internal sealed partial class TimelineMiniGraph : Control
         QueueRedraw();
     }
 
-    public void ResetToCurrent()
+    public void ResetView(string nodeId)
     {
-        if (_snapshot != null)
-        {
-            _focusedNodeId = _snapshot.CurrentNodeId;
-            InitializeBranchSelection();
-            _layout = null;
-        }
+        if (_snapshot == null || Find(_snapshot.Root, nodeId) == null) return;
+        _focusedNodeId = nodeId;
+        InitializeBranchSelection();
+        _layout = null;
         _zoom = CalculateReadableZoom();
         CenterCurrent();
     }
 
+    public void SetFocusedNode(string nodeId, bool center = true)
+    {
+        if (_snapshot == null || Find(_snapshot.Root, nodeId) == null) return;
+        if (_focusedNodeId != nodeId)
+        {
+            _focusedNodeId = nodeId;
+            InitializeBranchSelection();
+            _layout = null;
+        }
+        if (center)
+        {
+            _zoom = CalculateReadableZoom();
+            CenterCurrent();
+        }
+        QueueRedraw();
+    }
+
     public void SetSnapshot(TimelineSnapshot? snapshot)
     {
-        bool currentChanged = snapshot?.CurrentNodeId != _lastCurrentNodeId;
         _snapshot = snapshot;
-        _lastCurrentNodeId = snapshot?.CurrentNodeId;
         _layout = null;
         if (snapshot == null)
         {
@@ -71,12 +84,11 @@ internal sealed partial class TimelineMiniGraph : Control
             _projection = null;
             return;
         }
-        if (currentChanged || _focusedNodeId == null || Find(snapshot.Root, _focusedNodeId) == null)
+        if (_focusedNodeId == null || Find(snapshot.Root, _focusedNodeId) == null)
         {
             _focusedNodeId = snapshot.CurrentNodeId;
             InitializeBranchSelection();
         }
-        if (currentChanged) Callable.From(ResetToCurrent).CallDeferred();
         QueueRedraw();
     }
 
@@ -289,6 +301,7 @@ internal sealed partial class TimelineMiniGraph : Control
         if (area.NodeId != null)
         {
             SetFocus(area.NodeId);
+            FocusChanged?.Invoke(area.NodeId);
             NodeActivated?.Invoke(area.NodeId);
         }
         else if (area.MoreBranchesNodeId != null)
@@ -378,6 +391,7 @@ internal sealed partial class TimelineMiniGraph : Control
         else target = selected.Children[_selectedBranchIndex];
         if (target == null) return;
         SetFocus(target.NodeId, preferredChildIndex);
+        FocusChanged?.Invoke(target.NodeId);
         NodeActivated?.Invoke(target.NodeId);
     }
 

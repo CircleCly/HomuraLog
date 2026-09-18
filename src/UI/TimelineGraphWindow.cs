@@ -34,9 +34,10 @@ internal sealed partial class TimelineGraphWindow : CanvasLayer
     private bool _layoutDirty;
     private ulong _layoutSaveAt;
 
-    public TimelineGraphWindow(TimelineSnapshot snapshot)
+    public TimelineGraphWindow(TimelineSnapshot snapshot, string focusedNodeId)
     {
         _snapshot = snapshot;
+        _selectedNodeId = focusedNodeId;
         _layoutStore = new UiLayoutStore(Path.Combine(OS.GetUserDataDir(), "HomuraLog", "ui-layout-v1.json"));
         Layer = 110;
         _window = new RitsuFloatingWindow(new RitsuFloatingWindowOptions
@@ -73,7 +74,7 @@ internal sealed partial class TimelineGraphWindow : CanvasLayer
         toolbar.AddChild(help);
         Button center = new() { Text = HomuraText.ResetView, FocusMode = Control.FocusModeEnum.None };
         ApplyButtonFont(center);
-        center.Pressed += ResetGraphView;
+        center.Pressed += () => ResetViewRequested?.Invoke();
         toolbar.AddChild(center);
         content.AddChild(toolbar);
 
@@ -132,6 +133,8 @@ internal sealed partial class TimelineGraphWindow : CanvasLayer
 
     public event Action<string>? JumpRequested;
     public event Action<string>? DeleteRequested;
+    public event Action<string>? FocusChanged;
+    public event Action? ResetViewRequested;
     public event Action? Closed;
 
     public bool IsAvailable => !_closedNotified && GodotObject.IsInstanceValid(this);
@@ -151,7 +154,7 @@ internal sealed partial class TimelineGraphWindow : CanvasLayer
             if (!GodotObject.IsInstanceValid(this)) return;
             ApplyDefaultLargeBounds();
             _boundsInitialized = true;
-            CenterCurrent();
+            CenterSelected();
             if (_usingPreferredBounds)
             {
                 _layoutDirty = true;
@@ -185,17 +188,18 @@ internal sealed partial class TimelineGraphWindow : CanvasLayer
         Entry.Logger.Info($"UI smoke check large graph size={_window.Size} opacity={_window.Modulate.A:0.00} inside={inside}.");
     }
 
-    public void UpdateSnapshot(TimelineSnapshot snapshot)
+    public void UpdateSnapshot(TimelineSnapshot snapshot, string focusedNodeId)
     {
         _snapshot = snapshot;
+        _selectedNodeId = focusedNodeId;
         if (IsInsideTree()) Render();
     }
 
-    public void FocusNode(string nodeId)
+    public void SetFocusedNode(string nodeId, bool center = true)
     {
         if (!_nodes.ContainsKey(nodeId)) return;
         SelectNode(nodeId);
-        CenterNode(nodeId);
+        if (center) CenterNode(nodeId);
     }
 
     private void Render()
@@ -241,16 +245,19 @@ internal sealed partial class TimelineGraphWindow : CanvasLayer
         string selection = _selectedNodeId != null && included.Contains(_selectedNodeId)
             ? _selectedNodeId : _snapshot.CurrentNodeId;
         SelectNode(selection);
-        Callable.From(CenterCurrent).CallDeferred();
+        string target = selection;
+        Callable.From(() => CenterNode(target)).CallDeferred();
     }
 
-    private void CenterCurrent()
-        => CenterNode(_snapshot.CurrentNodeId);
+    private void CenterSelected()
+        => CenterNode(_selectedNodeId ?? _snapshot.CurrentNodeId);
 
-    private void ResetGraphView()
+    public void ResetView(string nodeId)
     {
+        _selectedNodeId = nodeId;
+        SelectNode(nodeId);
         _graph.Zoom = 1f;
-        Callable.From(CenterCurrent).CallDeferred();
+        Callable.From(() => CenterNode(nodeId)).CallDeferred();
     }
 
     private void CenterNode(string nodeId)
@@ -334,7 +341,10 @@ internal sealed partial class TimelineGraphWindow : CanvasLayer
     private void OnNodeSelected(Node node)
     {
         if (_segmentTail.TryGetValue(node.Name.ToString(), out TimelineNodeSnapshot? tail))
+        {
             SelectNode(tail.NodeId);
+            FocusChanged?.Invoke(tail.NodeId);
+        }
     }
 
     private void SelectNode(string nodeId)
@@ -404,7 +414,11 @@ internal sealed partial class TimelineGraphWindow : CanvasLayer
             if (node.IsCurrent) row.AddThemeColorOverride("font_color", new Color("f4b860"));
             else if (node.IsOnCurrentPath) row.AddThemeColorOverride("font_color", new Color("70b7ed"));
             string nodeId = node.NodeId;
-            row.Pressed += () => SelectNode(nodeId);
+            row.Pressed += () =>
+            {
+                SelectNode(nodeId);
+                FocusChanged?.Invoke(nodeId);
+            };
             _nodeRows[nodeId] = row;
             body.AddChild(row);
         }

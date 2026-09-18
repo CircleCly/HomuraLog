@@ -183,7 +183,7 @@ internal sealed partial class HomuraOverlay : CanvasLayer
             return;
         }
         string enemies = string.Join(", ", node.State.Enemies.Select(enemy =>
-            $"{enemy.ModelId} {enemy.Hp}/{enemy.MaxHp}" + (enemy.Block > 0 ? $" (+{enemy.Block})" : "")));
+            $"{LocalizedModelNames.Monster(enemy.ModelId)} {enemy.Hp}/{enemy.MaxHp}" + (enemy.Block > 0 ? $" (+{enemy.Block})" : "")));
         _details.Text = $"{HomuraText.Details}: T{node.State.Turn} · {HomuraText.Hp} {node.State.PlayerHp}/{node.State.PlayerMaxHp} · " +
             $"{HomuraText.Energy} {node.State.Energy}\n{HomuraText.EnemyHp}: {enemies}\n{HomuraText.Result}: {ResultText(node.Outcome)}";
     }
@@ -283,7 +283,7 @@ internal sealed partial class HomuraOverlay : CanvasLayer
     private static string FormatRichDetails(CombatStateSummary state, bool useLiveIntent = false)
     {
         string enemies = string.Join("\n", state.Enemies.Select(enemy =>
-            $"  {enemy.ModelId} {enemy.Hp}/{enemy.MaxHp}" + (enemy.Block > 0 ? $" (+{enemy.Block})" : "")
+            $"  {LocalizedModelNames.Monster(enemy.ModelId)} {enemy.Hp}/{enemy.MaxHp}" + (enemy.Block > 0 ? $" (+{enemy.Block})" : "")
             + (string.IsNullOrWhiteSpace(IntentForDisplay(enemy, useLiveIntent)) ? "" : $" · {HomuraText.Intent}: {IntentForDisplay(enemy, useLiveIntent)}")));
         return $"{HomuraText.Details}: T{state.Turn} · {HomuraText.Hp} {state.PlayerHp}/{state.PlayerMaxHp} · " +
             $"{HomuraText.Block} {state.PlayerBlock} · {HomuraText.Energy} {state.Energy}\n{HomuraText.EnemyHp}:\n{enemies}";

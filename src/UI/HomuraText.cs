@@ -35,9 +35,9 @@ internal static class HomuraText
     public static string Skip => Chinese ? "跳过选择" : "Skip choice";
     public static string Choice => Chinese ? "选择" : "Choice";
     public static string FullGraph => Chinese ? "世界线大图" : "Timeline graph";
-    public static string ResetView => Chinese ? "重置视图" : "Reset view";
+    public static string ResetView => Chinese ? "重置视角" : "Reset View";
     public static string CompactFullGraph => Chinese ? "大图" : "Large view";
-    public static string CompactResetView => Chinese ? "重置" : "Reset";
+    public static string CompactResetView => Chinese ? "重置视角" : "Reset View";
     public static string JumpHere => Chinese ? "跳到此世界线" : "Jump to this timeline";
     public static string DeleteNode => Chinese ? "删除节点及后续分支" : "Delete node and descendants";
     public static string ConfirmJump => Chinese ? "再次点击确认跳转" : "Click again to confirm jump";

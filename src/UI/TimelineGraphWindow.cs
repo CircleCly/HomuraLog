@@ -73,7 +73,7 @@ internal sealed partial class TimelineGraphWindow : CanvasLayer
         toolbar.AddChild(help);
         Button center = new() { Text = HomuraText.ResetView, FocusMode = Control.FocusModeEnum.None };
         ApplyButtonFont(center);
-        center.Pressed += CenterCurrent;
+        center.Pressed += ResetGraphView;
         toolbar.AddChild(center);
         content.AddChild(toolbar);
 
@@ -247,12 +247,19 @@ internal sealed partial class TimelineGraphWindow : CanvasLayer
     private void CenterCurrent()
         => CenterNode(_snapshot.CurrentNodeId);
 
+    private void ResetGraphView()
+    {
+        _graph.Zoom = 1f;
+        Callable.From(CenterCurrent).CallDeferred();
+    }
+
     private void CenterNode(string nodeId)
     {
         if (!_segmentByNode.TryGetValue(nodeId, out string? segmentId)
             || !_graph.HasNode(segmentId)) return;
         GraphNode node = _graph.GetNode<GraphNode>(segmentId);
-        _graph.ScrollOffset = node.PositionOffset - _graph.Size / 2 + node.Size / 2;
+        _graph.ScrollOffset = node.PositionOffset + node.Size / 2
+            - _graph.Size / (2 * Math.Max(_graph.Zoom, 0.01f));
     }
 
     private void ApplyDefaultLargeBounds()
@@ -343,7 +350,7 @@ internal sealed partial class TimelineGraphWindow : CanvasLayer
             $"T{node.State.Turn}\n{HomuraText.Hp} {node.State.PlayerHp}/{node.State.PlayerMaxHp}\n" +
             $"{HomuraText.Block} {node.State.PlayerBlock}\n{HomuraText.Energy} {node.State.Energy}\n{HomuraText.EnemyHp}\n" +
             string.Join('\n', node.State.Enemies.Select(enemy =>
-                $"  {enemy.ModelId}: {enemy.Hp}/{enemy.MaxHp}" + (enemy.Block > 0 ? $" +{enemy.Block}" : "")
+                $"  {LocalizedModelNames.Monster(enemy.ModelId)}: {enemy.Hp}/{enemy.MaxHp}" + (enemy.Block > 0 ? $" +{enemy.Block}" : "")
                 + (string.IsNullOrWhiteSpace(LocalizedIntent.Format(enemy)) ? "" : $" · {HomuraText.Intent}: {LocalizedIntent.Format(enemy)}")));
         _details.Text = $"{action}\n\n{HomuraText.Visits(node.Visits)}\n{node.Outcome}\n\n{state}";
     }

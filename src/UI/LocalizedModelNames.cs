@@ -8,6 +8,7 @@ internal static class LocalizedModelNames
     private static string _language = "";
     private static Dictionary<string, string> _cards = new(StringComparer.Ordinal);
     private static Dictionary<string, string> _potions = new(StringComparer.Ordinal);
+    private static Dictionary<string, string> _monsters = new(StringComparer.Ordinal);
 
     public static string Card(string id)
     {
@@ -19,6 +20,12 @@ internal static class LocalizedModelNames
     {
         RefreshIfNeeded();
         return _potions.GetValueOrDefault(id, Humanize(id));
+    }
+
+    public static string Monster(string id)
+    {
+        RefreshIfNeeded();
+        return _monsters.GetValueOrDefault(id, Humanize(id));
     }
 
     public static string Choice(string token)
@@ -40,12 +47,15 @@ internal static class LocalizedModelNames
         _language = language;
         _cards = new Dictionary<string, string>(StringComparer.Ordinal);
         _potions = new Dictionary<string, string>(StringComparer.Ordinal);
+        _monsters = new Dictionary<string, string>(StringComparer.Ordinal);
         try
         {
             foreach (CardModel card in ModelDb.AllCards)
                 _cards.TryAdd(card.Id.Entry, card.Title);
             foreach (PotionModel potion in ModelDb.AllPotions)
                 _potions.TryAdd(potion.Id.Entry, potion.Title.GetFormattedText());
+            foreach (MonsterModel monster in ModelDb.Monsters)
+                _monsters.TryAdd(monster.Id.Entry, monster.Title.GetFormattedText());
         }
         catch
         {

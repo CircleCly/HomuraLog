@@ -39,11 +39,14 @@ $completed = $false
 do {
     Start-Sleep -Seconds 2
     if (Test-Path $logPath) {
-        $match = Select-String -Path $logPath -Pattern 'Visual smoke check captured screenshots directory=' |
+        $match = Select-String -Path $logPath -Pattern 'Visual smoke check (passed|failed).*directory=' |
             Where-Object { $_.Line -match '^(.+?) \[INFO\]' -and [DateTimeOffset]$Matches[1] -ge $startedAt } |
             Select-Object -Last 1
         if ($match) {
             $directory = ($match.Line -split 'directory=', 2)[1].TrimEnd('.')
+            if ($match.Line -match 'Visual smoke check failed') {
+                throw "Visual smoke assertions failed. $($match.Line)"
+            }
             Write-Output "Visual smoke screenshots: $directory"
             Get-ChildItem -LiteralPath $directory -Filter '*.png' | Select-Object FullName, Length, LastWriteTime
             $completed = $true

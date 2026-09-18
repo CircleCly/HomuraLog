@@ -41,6 +41,7 @@ internal sealed partial class HomuraOverlay : CanvasLayer
     private string _lastLanguage = "";
     private bool _smokeSuppressJump;
     private string? _smokeLastJumpNodeId;
+    private readonly List<string> _visualSmokeFailures = [];
 
     public override void _Ready()
     {
@@ -398,6 +399,7 @@ internal sealed partial class HomuraOverlay : CanvasLayer
 
     private async Task RunVisualSmokeCheckAsync()
     {
+        _visualSmokeFailures.Clear();
         await WaitForUiFrames(4);
         if (_snapshot == null) return;
         await WaitForStableCombat();
@@ -431,6 +433,7 @@ internal sealed partial class HomuraOverlay : CanvasLayer
             await CaptureViewport(outputDirectory, "03-mini-node-details.png");
             DestroyMiniInspector();
         }
+        else RecordVisualSmokeResult(false, "alternate-node-fixture");
 
         TimelineNodeSnapshot? fanout = FlattenNodes(_snapshot.Root)
             .Where(node => node.Children.Count > 1)
@@ -449,6 +452,7 @@ internal sealed partial class HomuraOverlay : CanvasLayer
                 await CaptureViewport(outputDirectory, "05-mini-fanout-last-window.png");
             }
         }
+        else RecordVisualSmokeResult(false, "branching-node-fixture");
 
         ShowFullGraph();
         await WaitForUiFrames(4);
@@ -467,12 +471,23 @@ internal sealed partial class HomuraOverlay : CanvasLayer
         await CaptureNativeScreenSuppression(outputDirectory, "mega_view_draw_pile",
             "NCardPileScreen", "09-native-draw-pile.png");
         await CaptureNativeScreenSuppression(outputDirectory, "mega_view_discard_pile",
-            "NCardPileScreen", "10-native-discard-pile.png");
+            "NCardPileScreen", "10-native-discard-pile.png", false);
         await CaptureNativeScreenSuppression(outputDirectory, "mega_view_map",
             "NMapScreen", "11-native-map.png");
         await CaptureNativeScreenSuppression(outputDirectory, "mega_pause_and_back",
             "NCapstoneSubmenuStack", "12-native-pause.png");
+        int screenshotCount = Directory.GetFiles(outputDirectory, "*.png").Length;
+        RecordVisualSmokeResult(screenshotCount >= 15, $"screenshot-count-{screenshotCount}");
         Entry.Logger.Info($"Visual smoke check captured screenshots directory={outputDirectory}.");
+        if (_visualSmokeFailures.Count == 0)
+            Entry.Logger.Info($"Visual smoke check passed directory={outputDirectory}.");
+        else
+            Entry.Logger.Error($"Visual smoke check failed checks={string.Join(',', _visualSmokeFailures)} directory={outputDirectory}.");
+    }
+
+    private void RecordVisualSmokeResult(bool passed, string check)
+    {
+        if (!passed) _visualSmokeFailures.Add(check);
     }
 
     private async Task RunMiniPointerSmokeChecks(string directory, TimelineNodeSnapshot? fanout)
@@ -484,6 +499,7 @@ internal sealed partial class HomuraOverlay : CanvasLayer
         int branchBefore = _miniGraph.SmokeSelectedBranchIndex;
         await ClickAt(_miniGraph.SmokeNavigationCenter("Right"));
         bool rightWorked = _miniGraph.SmokeSelectedBranchIndex == branchBefore + 1;
+        RecordVisualSmokeResult(rightWorked, "mini-right-pointer");
         Entry.Logger.Info($"Visual smoke pointer mini-right worked={rightWorked} " +
             $"before={branchBefore} after={_miniGraph.SmokeSelectedBranchIndex}.");
         await CaptureViewport(directory, "13-mini-pointer-right.png");
@@ -491,6 +507,7 @@ internal sealed partial class HomuraOverlay : CanvasLayer
         string expectedChild = fanout.Children[_miniGraph.SmokeSelectedBranchIndex].NodeId;
         await ClickAt(_miniGraph.SmokeNavigationCenter("Down"));
         bool downWorked = string.Equals(_focus.FocusedNodeId, expectedChild, StringComparison.Ordinal);
+        RecordVisualSmokeResult(downWorked, "mini-down-pointer");
         Entry.Logger.Info($"Visual smoke pointer mini-down worked={downWorked} " +
             $"expected={expectedChild} actual={_focus.FocusedNodeId}.");
         await CaptureViewport(directory, "14-mini-pointer-down.png");
@@ -500,6 +517,7 @@ internal sealed partial class HomuraOverlay : CanvasLayer
         if (_miniJump != null && !_miniJump.Disabled)
             await ClickAt(_miniJump.GetGlobalRect().GetCenter());
         bool jumpWorked = string.Equals(_smokeLastJumpNodeId, expectedChild, StringComparison.Ordinal);
+        RecordVisualSmokeResult(jumpWorked, "mini-jump-pointer");
         _smokeSuppressJump = false;
         Entry.Logger.Info($"Visual smoke pointer mini-jump-request worked={jumpWorked} " +
             $"expected={expectedChild} actual={_smokeLastJumpNodeId}.");
@@ -543,6 +561,8 @@ internal sealed partial class HomuraOverlay : CanvasLayer
         }, true);
         await WaitForUiFrames(2);
         bool dragWorked = _miniGraph.SmokePan.DistanceTo(panBefore) >= 6f;
+        RecordVisualSmokeResult(zoomWorked, "mini-wheel-zoom");
+        RecordVisualSmokeResult(dragWorked, "mini-canvas-drag");
         Entry.Logger.Info($"Visual smoke pointer mini-canvas zoomWorked={zoomWorked} " +
             $"zoomBefore={zoomBefore:0.00} zoomAfter={_miniGraph.SmokeZoom:0.00} " +
             $"dragWorked={dragWorked} panDelta={_miniGraph.SmokePan - panBefore}.");
@@ -560,6 +580,7 @@ internal sealed partial class HomuraOverlay : CanvasLayer
         Vector2 rowPoint = _graphWindow.SmokeNodeRowCenter(alternate.NodeId);
         await ClickAt(rowPoint);
         bool rowWorked = string.Equals(_focus.FocusedNodeId, alternate.NodeId, StringComparison.Ordinal);
+        RecordVisualSmokeResult(rowWorked, "large-node-row-pointer");
         Entry.Logger.Info($"Visual smoke pointer large-row worked={rowWorked} before={beforeFocus} " +
             $"expected={alternate.NodeId} actual={_focus.FocusedNodeId} point={rowPoint}.");
 
@@ -569,6 +590,8 @@ internal sealed partial class HomuraOverlay : CanvasLayer
         _graphWindow.SuppressRequestsForSmoke(true);
         await ClickAt(_graphWindow.SmokeDeleteButtonCenter());
         bool deleteWorked = _graphWindow.SmokeLastRequest == $"delete:{alternate.NodeId}";
+        RecordVisualSmokeResult(jumpWorked, "large-jump-pointer");
+        RecordVisualSmokeResult(deleteWorked, "large-delete-pointer");
         _graphWindow.SuppressRequestsForSmoke(false);
         Entry.Logger.Info($"Visual smoke pointer large-actions jumpWorked={jumpWorked} " +
             $"deleteWorked={deleteWorked} node={alternate.NodeId}.");
@@ -612,6 +635,8 @@ internal sealed partial class HomuraOverlay : CanvasLayer
         }, true);
         await WaitForUiFrames(2);
         bool dragWorked = _graphWindow.SmokeScrollOffset.DistanceTo(scrollBefore) >= 6f;
+        RecordVisualSmokeResult(zoomWorked, "large-wheel-zoom");
+        RecordVisualSmokeResult(dragWorked, "large-canvas-drag");
         Entry.Logger.Info($"Visual smoke pointer large-canvas zoomWorked={zoomWorked} " +
             $"zoomBefore={zoomBefore:0.00} zoomAfter={_graphWindow.SmokeZoom:0.00} " +
             $"dragWorked={dragWorked} scrollDelta={_graphWindow.SmokeScrollOffset - scrollBefore}.");
@@ -639,11 +664,12 @@ internal sealed partial class HomuraOverlay : CanvasLayer
     }
 
     private async Task CaptureNativeScreenSuppression(
-        string directory, string action, string expectedScreen, string fileName)
+        string directory, string action, string expectedScreen, string fileName, bool required = true)
     {
         if (!InputMap.HasAction(action))
         {
             Entry.Logger.Warn($"Visual smoke native-screen check skipped; input action is unavailable action={action}.");
+            if (required) RecordVisualSmokeResult(false, $"native-action-{action}");
             return;
         }
         InputEventKey? binding = InputMap.ActionGetEvents(action).OfType<InputEventKey>().FirstOrDefault()
@@ -664,8 +690,10 @@ internal sealed partial class HomuraOverlay : CanvasLayer
         {
             Entry.Logger.Warn($"Visual smoke native-screen check unavailable; the action did not open its screen " +
                 $"(the pile may be empty) action={action}.");
+            if (required) RecordVisualSmokeResult(false, $"native-screen-{action}");
             return;
         }
+        RecordVisualSmokeResult(_panel?.Visible == false, $"native-overlay-hidden-{action}");
         await CaptureViewport(directory, fileName);
 
         Input.ParseInputEvent(new InputEventKey { Keycode = Key.Escape, PhysicalKeycode = Key.Escape, Pressed = true });

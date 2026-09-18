@@ -354,7 +354,7 @@ internal sealed partial class TimelineMiniGraph : Control
             DrawString(theme.Font.BodyBold, button.Rect.Position + new Vector2(0, 20), button.Label,
                 HorizontalAlignment.Center, button.Rect.Size.X, 16, text);
         }
-        if (_projection is { BranchCount: > 0 } projection)
+        if (_projection is { BranchCount: > 1 } projection)
         {
             int end = Math.Min(projection.BranchCount,
                 projection.BranchWindowStart + MiniTimelineProjector.VisibleBranchCount);
@@ -368,6 +368,17 @@ internal sealed partial class TimelineMiniGraph : Control
 
     private IReadOnlyList<BranchButton> BranchButtons()
     {
+        int branchCount = _snapshot != null && _focusedNodeId != null
+            ? Find(_snapshot.Root, _focusedNodeId)?.Children.Count ?? 0 : 0;
+        if (branchCount <= 1)
+        {
+            float center = Size.X / 2f - 14f;
+            return
+            [
+                new BranchButton(new Rect2(center, 5, 28, 28), "↑", NavigationDirection.Up),
+                new BranchButton(new Rect2(center, 37, 28, 28), "↓", NavigationDirection.Down),
+            ];
+        }
         float x = Size.X - 103;
         return
         [

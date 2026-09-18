@@ -21,7 +21,6 @@ Evidence is stored under `%APPDATA%\SlayTheSpire2\HomuraLog\visual-smoke`. The 2
 
 - At 1280×720, compact branch text is technically readable but near the comfortable size limit.
 - When content continues below the compact viewport, there is no edge fade, scrollbar, or persistent cue that the canvas can be dragged.
-- `Branch 1/1 · showing 1–1` and disabled left/right buttons consume space for a path that has no meaningful branch choice.
 - Focus gold and current-position orange are close in hue; without prior explanation, their different meanings are not self-evident.
 - Opening the large view leaves the compact window visible, duplicating information and consuming additional screen space.
 - Disabled jump/delete buttons do not explain why the action is unavailable.

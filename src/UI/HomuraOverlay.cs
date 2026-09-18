@@ -487,6 +487,7 @@ internal sealed partial class HomuraOverlay : CanvasLayer
             "NMapScreen", "11-native-map.png");
         await CaptureNativeScreenSuppression(outputDirectory, "mega_pause_and_back",
             "NCapstoneSubmenuStack", "12-native-pause.png");
+        if (DestructiveVisualSmokeEnabled()) await RunDestructiveSmokeChecks(outputDirectory);
         int screenshotCount = Directory.GetFiles(outputDirectory, "*.png").Length;
         RecordVisualSmokeResult(screenshotCount >= 15, $"screenshot-count-{screenshotCount}");
         Entry.Logger.Info($"Visual smoke check captured screenshots directory={outputDirectory}.");
@@ -499,6 +500,74 @@ internal sealed partial class HomuraOverlay : CanvasLayer
     private void RecordVisualSmokeResult(bool passed, string check)
     {
         if (!passed) _visualSmokeFailures.Add(check);
+    }
+
+    private static bool DestructiveVisualSmokeEnabled() => System.Environment.GetCommandLineArgs()
+        .Contains("--homuralog-destructive-smoke", StringComparer.OrdinalIgnoreCase);
+
+    private async Task RunDestructiveSmokeChecks(string directory)
+    {
+        if (_snapshot == null || _miniGraph == null) return;
+        TimelineNodeSnapshot? current = FindNode(_snapshot.Root, _snapshot.CurrentNodeId);
+        TimelineNodeSnapshot? forwardTarget = current?.Children.FirstOrDefault(child => child.Action != null);
+        if (forwardTarget == null)
+        {
+            RecordVisualSmokeResult(false, "destructive-forward-fixture");
+            return;
+        }
+
+        SetSharedFocus(forwardTarget.NodeId, FocusSource.External);
+        ShowNodeDetails(forwardTarget.NodeId);
+        await WaitForUiFrames(3);
+        if (_miniJump == null || _miniJump.Disabled)
+        {
+            RecordVisualSmokeResult(false, "destructive-forward-button-enabled");
+            return;
+        }
+        await ClickAt(_miniJump.GetGlobalRect().GetCenter());
+        bool arrived = await WaitForCurrentNode(forwardTarget.NodeId, 900);
+        RecordVisualSmokeResult(arrived, "destructive-forward-arrived");
+        Entry.Logger.Info($"Visual smoke destructive forward arrived={arrived} target={forwardTarget.NodeId}.");
+        if (arrived) await WaitForStableCombat();
+        await CaptureViewport(directory, "17-destructive-forward-arrived.png");
+        if (!arrived || _snapshot == null) return;
+
+        TimelineNodeSnapshot? deleteTarget = FlattenNodes(_snapshot.Root)
+            .Where(node => node.Action != null && !node.IsOnCurrentPath)
+            .OrderBy(node => node.Children.Count)
+            .ThenByDescending(node => node.LastVisitedAt)
+            .FirstOrDefault();
+        if (deleteTarget == null)
+        {
+            RecordVisualSmokeResult(false, "destructive-delete-fixture");
+            return;
+        }
+        string deleteNodeId = deleteTarget.NodeId;
+        ShowFullGraphAt(deleteNodeId);
+        await WaitForUiFrames(5);
+        if (_graphWindow == null || !_graphWindow.PrepareNodeRowPointerTest(deleteNodeId))
+        {
+            RecordVisualSmokeResult(false, "destructive-delete-row");
+            return;
+        }
+        await WaitForUiFrames(3);
+        await ClickAt(_graphWindow.SmokeNodeRowCenter(deleteNodeId));
+        await ClickAt(_graphWindow.SmokeDeleteButtonCenter());
+        await WaitForUiFrames(5);
+        bool deleted = _snapshot != null && FindNode(_snapshot.Root, deleteNodeId) == null;
+        RecordVisualSmokeResult(deleted, "destructive-delete-removed");
+        Entry.Logger.Info($"Visual smoke destructive delete removed={deleted} target={deleteNodeId}.");
+        await CaptureViewport(directory, "18-destructive-delete-removed.png");
+    }
+
+    private async Task<bool> WaitForCurrentNode(string nodeId, int maximumFrames)
+    {
+        for (int frame = 0; frame < maximumFrames; frame++)
+        {
+            if (_snapshot?.CurrentNodeId == nodeId) return true;
+            await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+        }
+        return false;
     }
 
     private async Task RunMiniPointerSmokeChecks(string directory, TimelineNodeSnapshot? fanout)

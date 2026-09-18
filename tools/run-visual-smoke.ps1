@@ -1,7 +1,8 @@
 param(
     [int]$TimeoutSeconds = 90,
     [int]$Width = 0,
-    [int]$Height = 0
+    [int]$Height = 0,
+    [switch]$Destructive
 )
 
 $ErrorActionPreference = 'Stop'
@@ -24,6 +25,7 @@ finally {
 }
 
 $arguments = @('--enable-mods', '--homuralog-visual-smoke')
+if ($Destructive) { $arguments += '--homuralog-destructive-smoke' }
 if ($Width -gt 0 -or $Height -gt 0) {
     if ($Width -lt 640 -or $Height -lt 360) { throw 'Width and Height must both specify a usable viewport.' }
     $arguments += "--homuralog-visual-size=${Width}x${Height}"

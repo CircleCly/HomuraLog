@@ -437,8 +437,11 @@ internal sealed partial class HomuraOverlay : CanvasLayer
         await WaitForUiFrames(3);
         RecordVisualSmokeResult((_miniGraph?.SmokeZoom ?? 0) >= 0.86f,
             "mini-readable-auto-zoom");
-        RecordVisualSmokeResult((_miniGraph?.SmokeContentViewport.Position.Y ?? 0) >= 92f,
-            "mini-navigation-safe-area");
+        RecordVisualSmokeResult((_miniGraph?.SmokeNavigatorRect.Size.X ?? 0) <= 112f
+            && (_miniGraph?.SmokeNavigatorRect.Position.X ?? 0) > 0,
+            "mini-navigation-local-safe-area");
+        RecordVisualSmokeResult(_miniGraph?.SmokeNavigationButtonCount == 4,
+            "mini-navigation-always-four-buttons");
         await CaptureViewport(outputDirectory, "01-mini-current.png");
 
         TimelineNodeSnapshot? alternate = FlattenNodes(_snapshot.Root)

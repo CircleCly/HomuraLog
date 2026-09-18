@@ -8,7 +8,6 @@ namespace HomuraLog.UI;
 internal sealed partial class TimelineMiniGraph : Control
 {
     private const float MinReadableZoom = 0.86f;
-    private const float NavigatorHeight = 92f;
     private const float OverflowSliver = 2f;
     private const float FirstStepWidth = 160f;
     private const float RegularMaxWidth = 190f;
@@ -47,6 +46,8 @@ internal sealed partial class TimelineMiniGraph : Control
     internal float SmokeZoom => _zoom;
     internal Vector2 SmokePan => _pan;
     internal Rect2 SmokeContentViewport => ContentViewport;
+    internal Rect2 SmokeNavigatorRect => NavigatorRect;
+    internal int SmokeNavigationButtonCount => BranchButtons().Count;
 
     internal Vector2 SmokeNavigationCenter(string direction)
     {
@@ -129,7 +130,7 @@ internal sealed partial class TimelineMiniGraph : Control
         if (inputEvent is InputEventMouseButton wheel
             && wheel.Pressed && wheel.ButtonIndex is MouseButton.WheelUp or MouseButton.WheelDown)
         {
-            if (!ContentViewport.HasPoint(wheel.Position)) return;
+            if (!ContentViewport.HasPoint(wheel.Position) || NavigatorRect.HasPoint(wheel.Position)) return;
             float oldZoom = _zoom;
             _zoom = Math.Clamp(_zoom * (wheel.ButtonIndex == MouseButton.WheelUp ? 1.12f : 0.89f), 0.55f, 1.6f);
             Vector2 worldAtCursor = (wheel.Position - _pan) / oldZoom;
@@ -142,8 +143,15 @@ internal sealed partial class TimelineMiniGraph : Control
         {
             if (button.Pressed)
             {
+                if (BranchButtons().Any(candidate => candidate.Rect.HasPoint(button.Position)))
+                {
+                    _panning = false;
+                    _dragged = false;
+                    AcceptEvent();
+                    return;
+                }
                 if (!ContentViewport.HasPoint(button.Position)
-                    && !BranchButtons().Any(candidate => candidate.Rect.HasPoint(button.Position))) return;
+                    || NavigatorRect.HasPoint(button.Position)) return;
                 _panning = true;
                 _dragged = false;
                 _dragDistance = 0;
@@ -167,7 +175,7 @@ internal sealed partial class TimelineMiniGraph : Control
             }
             else
             {
-                if (ContentViewport.HasPoint(motion.Position))
+                if (ContentViewport.HasPoint(motion.Position) && !NavigatorRect.HasPoint(motion.Position))
                 {
                     Vector2 world = ScreenToWorld(motion.Position);
                     _hoveredItemId = _hitAreas.LastOrDefault(area => area.Rect.HasPoint(world))?.ItemId;
@@ -351,7 +359,7 @@ internal sealed partial class TimelineMiniGraph : Control
             Navigate(branchButton.Direction);
             return;
         }
-        if (!ContentViewport.HasPoint(screenPosition)) return;
+        if (!ContentViewport.HasPoint(screenPosition) || NavigatorRect.HasPoint(screenPosition)) return;
         Vector2 world = ScreenToWorld(screenPosition);
         HitArea? area = _hitAreas.LastOrDefault(candidate => candidate.Rect.HasPoint(world));
         if (area == null) return;
@@ -392,14 +400,28 @@ internal sealed partial class TimelineMiniGraph : Control
         }
     }
 
-    private Rect2 ContentViewport => new(0, NavigatorHeight, Size.X, Math.Max(0, Size.Y - NavigatorHeight));
+    private Rect2 ContentViewport => new(0, 0, Size.X, Size.Y);
+
+    private Rect2 NavigatorRect
+    {
+        get
+        {
+            int branchCount = _snapshot != null && _focusedNodeId != null
+                ? Find(_snapshot.Root, _focusedNodeId)?.Children.Count ?? 0 : 0;
+            float height = branchCount > 1 ? 94f : 72f;
+            return new Rect2(Math.Max(0, Size.X - 112f), 0, Math.Min(112f, Size.X), height);
+        }
+    }
 
     private Vector2 ScreenToWorld(Vector2 screen) => (screen - _pan) / _zoom;
 
     private void DrawNavigationMask(RitsuShellTheme theme)
     {
-        DrawRect(new Rect2(0, 0, Size.X, NavigatorHeight), new Color(theme.Surface.Inset.Bg, 1f), true);
-        DrawLine(new Vector2(0, NavigatorHeight - 1), new Vector2(Size.X, NavigatorHeight - 1),
+        Rect2 rect = NavigatorRect;
+        DrawRect(rect, new Color(theme.Surface.Inset.Bg, 0.98f), true);
+        DrawLine(new Vector2(rect.Position.X, rect.End.Y - 1), new Vector2(rect.End.X, rect.End.Y - 1),
+            new Color("53606d"), 1f);
+        DrawLine(new Vector2(rect.Position.X, rect.Position.Y), new Vector2(rect.Position.X, rect.End.Y),
             new Color("53606d"), 1f);
     }
 
@@ -448,17 +470,6 @@ internal sealed partial class TimelineMiniGraph : Control
 
     private IReadOnlyList<BranchButton> BranchButtons()
     {
-        int branchCount = _snapshot != null && _focusedNodeId != null
-            ? Find(_snapshot.Root, _focusedNodeId)?.Children.Count ?? 0 : 0;
-        if (branchCount <= 1)
-        {
-            float center = Size.X / 2f - 14f;
-            return
-            [
-                new BranchButton(new Rect2(center, 5, 28, 28), "↑", NavigationDirection.Up),
-                new BranchButton(new Rect2(center, 37, 28, 28), "↓", NavigationDirection.Down),
-            ];
-        }
         float x = Size.X - 103;
         return
         [

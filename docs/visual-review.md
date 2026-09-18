@@ -22,7 +22,7 @@ Evidence is stored under `%APPDATA%\SlayTheSpire2\HomuraLog\visual-smoke`. The 2
 
 - Compact automatic framing now preserves a readable minimum zoom at 1280×720 and lets overflow remain pannable.
 - Edge fades and a localized drag cue identify compact content outside the viewport.
-- The compact navigator has an opaque safe area; panned graph content is masked and cannot be clicked through it.
+- The compact navigator uses one small opaque safe area in the upper-right corner; graph content can use the rest of the upper canvas and cannot be clicked through the controls.
 - Focus uses a cyan-white double outline and diamond marker, while the actual player position retains its orange fill and arrow marker. Both states remain visible when they coincide.
 - Opening the large graph temporarily hides the compact window; closing it restores the prior compact visibility state.
 - Jump and delete buttons share availability rules and localized explanations for their disabled states.

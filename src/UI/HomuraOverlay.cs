@@ -532,6 +532,29 @@ internal sealed partial class HomuraOverlay : CanvasLayer
         await CaptureViewport(directory, "17-destructive-forward-arrived.png");
         if (!arrived || _snapshot == null) return;
 
+        int forwardSteps = 1;
+        while (CurrentDiscardCount() == 0 && forwardSteps < 8 && _snapshot != null)
+        {
+            TimelineNodeSnapshot? cursor = FindNode(_snapshot.Root, _snapshot.CurrentNodeId);
+            TimelineNodeSnapshot? next = cursor?.Children.FirstOrDefault(child => child.Action != null);
+            if (next == null) break;
+            SetSharedFocus(next.NodeId, FocusSource.External);
+            ShowNodeDetails(next.NodeId);
+            await WaitForUiFrames(3);
+            if (_miniJump == null || _miniJump.Disabled) break;
+            await ClickAt(_miniJump.GetGlobalRect().GetCenter());
+            if (!await WaitForCurrentNode(next.NodeId, 900)) break;
+            await WaitForStableCombat();
+            forwardSteps++;
+        }
+        int discardCount = CurrentDiscardCount();
+        RecordVisualSmokeResult(discardCount > 0, "destructive-discard-fixture");
+        Entry.Logger.Info($"Visual smoke destructive discard fixture cards={discardCount} forwardSteps={forwardSteps}.");
+        if (discardCount > 0)
+            await CaptureNativeScreenSuppression(directory, "mega_view_discard_pile",
+                "NCardPileScreen", "19-destructive-discard-pile.png");
+        if (_snapshot == null) return;
+
         TimelineNodeSnapshot? deleteTarget = FlattenNodes(_snapshot.Root)
             .Where(node => node.Action != null && !node.IsOnCurrentPath)
             .OrderBy(node => node.Children.Count)
@@ -556,6 +579,11 @@ internal sealed partial class HomuraOverlay : CanvasLayer
         await WaitForUiFrames(5);
         bool deleted = _snapshot != null && FindNode(_snapshot.Root, deleteNodeId) == null;
         RecordVisualSmokeResult(deleted, "destructive-delete-removed");
+        bool deleteFocusRecovered = deleted && _snapshot != null
+            && _focus.FocusedNodeId == _snapshot.CurrentNodeId
+            && _miniGraph?.SmokeFocusedNodeId == _snapshot.CurrentNodeId
+            && _graphWindow?.SmokeSelectedNodeId == _snapshot.CurrentNodeId;
+        RecordVisualSmokeResult(deleteFocusRecovered, "destructive-delete-focus-fallback");
         Entry.Logger.Info($"Visual smoke destructive delete removed={deleted} target={deleteNodeId}.");
         await CaptureViewport(directory, "18-destructive-delete-removed.png");
     }
@@ -568,6 +596,17 @@ internal sealed partial class HomuraOverlay : CanvasLayer
             await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
         }
         return false;
+    }
+
+    private int CurrentDiscardCount()
+    {
+        if (_session == null) return 0;
+        try
+        {
+            var player = LocalContext.GetMe(_session.Combat);
+            return player?.PlayerCombatState?.DiscardPile.Cards.Count ?? 0;
+        }
+        catch { return 0; }
     }
 
     private async Task RunMiniPointerSmokeChecks(string directory, TimelineNodeSnapshot? fanout)

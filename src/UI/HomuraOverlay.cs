@@ -2,6 +2,7 @@ using Godot;
 using HomuraLog.Domain;
 using HomuraLog.Runtime;
 using MegaCrit.Sts2.Core.Combat;
+using MegaCrit.Sts2.Core.Context;
 using MegaCrit.Sts2.Core.Helpers;
 using MegaCrit.Sts2.Core.Entities.Multiplayer;
 using MegaCrit.Sts2.Core.Nodes.Combat;
@@ -394,6 +395,7 @@ internal sealed partial class HomuraOverlay : CanvasLayer
     {
         await WaitForUiFrames(4);
         if (_snapshot == null) return;
+        await WaitForStableCombat();
         string outputDirectory = Path.Combine(OS.GetUserDataDir(), "HomuraLog", "visual-smoke",
             DateTimeOffset.Now.ToString("yyyyMMdd-HHmmss"));
         Directory.CreateDirectory(outputDirectory);
@@ -430,6 +432,27 @@ internal sealed partial class HomuraOverlay : CanvasLayer
     {
         for (int index = 0; index < count; index++)
             await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+    }
+
+    private async Task WaitForStableCombat()
+    {
+        for (int frame = 0; frame < 1800; frame++)
+        {
+            if (_session != null && CombatManager.Instance.IsInProgress
+                && ReferenceEquals(CombatManager.Instance.DebugOnlyGetState(), _session.Combat))
+            {
+                var player = LocalContext.GetMe(_session.Combat);
+                if (player?.PlayerCombatState?.Phase.ToString() == "Play"
+                    && RunManager.Instance.ActionExecutor.CurrentlyRunningAction == null)
+                {
+                    // Combat phase changes before the opening banner and hand fan finish animating.
+                    await WaitForUiFrames(60);
+                    return;
+                }
+            }
+            await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+        }
+        Entry.Logger.Warn("Visual smoke check timed out waiting for stable player input; capturing the current frame.");
     }
 
     private async Task CaptureViewport(string directory, string fileName)

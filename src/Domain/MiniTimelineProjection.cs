@@ -1,141 +1,78 @@
 namespace HomuraLog.Domain;
 
-public sealed record MiniTimelineRow(TimelineNodeSnapshot? Node, int OmittedCount = 0)
+public sealed record MiniTimelineRow(TimelineNodeSnapshot? Node, int OmittedCount = 0,
+    bool IsFocused = false, bool IsSelectedBranch = false, bool IsBranchFirstStep = false)
 {
     public bool IsOmission => Node == null;
 }
 
-public sealed record MiniTimelineSegment(
-    string Id,
-    IReadOnlyList<MiniTimelineRow> Rows,
-    IReadOnlyList<MiniTimelineSegment> Children,
-    int HiddenBranchCount,
-    string MoreBranchesNodeId);
+public sealed record MiniTimelineSegment(string Id, IReadOnlyList<MiniTimelineRow> Rows,
+    IReadOnlyList<MiniTimelineSegment> Children, int HiddenBranchCount, string MoreBranchesNodeId);
 
+public sealed record MiniTimelineProjection(MiniTimelineSegment Root, string FocusedNodeId,
+    int BranchCount, int SelectedBranchIndex, int BranchWindowStart,
+    IReadOnlyList<string> VisibleBranchNodeIds);
+
+/// <summary>Builds the small graph around a browsing focus, independently of the combat cursor.</summary>
 public static class MiniTimelineProjector
 {
-    private const int AncestorDecisions = 2;
-    private const int DescendantDecisions = 2;
-    private const int BranchCap = 6;
-    private const int ActionsBeforeCurrent = 3;
-    private const int ActionsAfterCurrent = 2;
+    public const int ParentPreviewCount = 2;
+    public const int VisibleBranchCount = 3;
+    public const int BranchPreviewLength = 3;
 
-    public static MiniTimelineSegment Create(TimelineSnapshot snapshot, string? preferredNextNodeId = null)
+    public static MiniTimelineProjection Create(TimelineSnapshot snapshot, string? focusedNodeId,
+        int selectedBranchIndex, int branchWindowStart)
     {
-        RawSegment root = BuildSegments(snapshot.Root, null);
-        RawSegment current = Flatten(root).First(segment =>
-            segment.Nodes.Any(node => node.NodeId == snapshot.CurrentNodeId));
-        List<RawSegment> path = [];
-        for (RawSegment? cursor = current; cursor != null; cursor = cursor.Parent) path.Add(cursor);
-        path.Reverse();
-        int startIndex = Math.Max(0, path.Count - 1 - AncestorDecisions);
-        RawSegment start = path[startIndex];
-        HashSet<string> mainPath = path.Skip(startIndex).Select(segment => segment.Id)
-            .ToHashSet(StringComparer.Ordinal);
-        int earlierActions = path.Take(startIndex)
-            .Sum(segment => segment.Nodes.Count(node => node.Action != null));
-        return Project(start, current.Id, mainPath, DescendantDecisions, earlierActions,
-            preferredNextNodeId);
-    }
-
-    private static MiniTimelineSegment Project(RawSegment segment, string currentId,
-        HashSet<string> mainPath, int descendantDepth, int earlierActions = 0,
-        string? preferredNextNodeId = null)
-    {
-        bool isCurrent = segment.Id == currentId;
-        RawSegment? pathChild = segment.Children.FirstOrDefault(child => mainPath.Contains(child.Id));
-        RawSegment[] ordered = segment.Children
-            .OrderByDescending(child => ReferenceEquals(child, pathChild))
-            .ThenByDescending(child => child.Nodes.Max(node => node.LastVisitedAt)).ToArray();
-        RawSegment[] selected = ordered.Take(BranchCap).ToArray();
-        if (isCurrent && preferredNextNodeId != null)
+        List<TimelineNodeSnapshot> path = [];
+        if (focusedNodeId == null || !FindPath(snapshot.Root, focusedNodeId, path))
         {
-            RawSegment? preferred = ordered.FirstOrDefault(child =>
-                child.Nodes[0].NodeId == preferredNextNodeId);
-            if (preferred != null && !selected.Contains(preferred))
-                selected[^1] = preferred;
+            path.Clear();
+            FindPath(snapshot.Root, snapshot.CurrentNodeId, path);
         }
-        int hidden = Math.Max(0, segment.Children.Count - selected.Length);
+        TimelineNodeSnapshot focus = path[^1];
+        IReadOnlyList<TimelineNodeSnapshot> branches = focus.Children;
+        int branchCount = branches.Count;
+        int selected = branchCount == 0 ? -1 : Math.Clamp(selectedBranchIndex, 0, branchCount - 1);
+        int start = Math.Clamp(branchWindowStart, 0, Math.Max(0, branchCount - VisibleBranchCount));
+        if (selected >= 0)
+        {
+            if (selected < start) start = selected;
+            else if (selected >= start + VisibleBranchCount) start = selected - VisibleBranchCount + 1;
+        }
+
+        MiniTimelineRow[] parentRows = path
+            .Skip(Math.Max(0, path.Count - ParentPreviewCount - 1))
+            .Select(node => new MiniTimelineRow(node, IsFocused: node.NodeId == focus.NodeId))
+            .ToArray();
         List<MiniTimelineSegment> children = [];
-        foreach (RawSegment child in selected)
+        List<string> visibleIds = [];
+        for (int index = start; index < Math.Min(branchCount, start + VisibleBranchCount); index++)
         {
-            bool continuesToCurrent = mainPath.Contains(child.Id);
-            children.Add(continuesToCurrent
-                ? Project(child, currentId, mainPath, descendantDepth, preferredNextNodeId: preferredNextNodeId)
-                : ProjectPreview(child, isCurrent ? descendantDepth : 1));
+            TimelineNodeSnapshot first = branches[index];
+            visibleIds.Add(first.NodeId);
+            List<MiniTimelineRow> rows = [];
+            TimelineNodeSnapshot cursor = first;
+            for (int depth = 0; depth < BranchPreviewLength; depth++)
+            {
+                rows.Add(new MiniTimelineRow(cursor, IsSelectedBranch: index == selected && depth == 0,
+                    IsBranchFirstStep: depth == 0));
+                if (cursor.Children.Count == 0) break;
+                cursor = cursor.Children.OrderByDescending(child => child.IsOnCurrentPath)
+                    .ThenByDescending(child => child.LastVisitedAt).First();
+            }
+            children.Add(new MiniTimelineSegment(first.NodeId, rows, [], 0, first.NodeId));
         }
-        return new MiniTimelineSegment(segment.Id,
-            ClipRows(segment.Nodes, isCurrent, earlierActions), children, hidden, segment.Nodes[^1].NodeId);
+        MiniTimelineSegment root = new(focus.NodeId, parentRows, children, 0, focus.NodeId);
+        return new MiniTimelineProjection(root, focus.NodeId, branchCount, selected, start, visibleIds);
     }
 
-    private static MiniTimelineSegment ProjectPreview(RawSegment segment, int depth)
+    private static bool FindPath(TimelineNodeSnapshot node, string nodeId, List<TimelineNodeSnapshot> path)
     {
-        if (depth <= 1)
-            return new MiniTimelineSegment(segment.Id, ClipEdge(segment.Nodes), [],
-                segment.Children.Count, segment.Nodes[^1].NodeId);
-        RawSegment[] selected = segment.Children
-            .OrderByDescending(child => child.Nodes.Max(node => node.LastVisitedAt))
-            .Take(BranchCap).ToArray();
-        return new MiniTimelineSegment(segment.Id, ClipEdge(segment.Nodes),
-            selected.Select(child => ProjectPreview(child, depth - 1)).ToArray(),
-            Math.Max(0, segment.Children.Count - selected.Length), segment.Nodes[^1].NodeId);
-    }
-
-    private static IReadOnlyList<MiniTimelineRow> ClipRows(
-        IReadOnlyList<TimelineNodeSnapshot> nodes, bool containsCurrent, int earlierActions)
-    {
-        List<MiniTimelineRow> rows = [];
-        if (!containsCurrent)
-        {
-            int keep = Math.Min(2, nodes.Count);
-            int omitted = earlierActions + nodes.Count - keep;
-            if (omitted > 0) rows.Add(new MiniTimelineRow(null, omitted));
-            rows.AddRange(nodes.Skip(nodes.Count - keep).Select(node => new MiniTimelineRow(node)));
-            return rows;
-        }
-        int current = nodes.ToList().FindIndex(node => node.IsCurrent);
-        int first = Math.Max(0, current - ActionsBeforeCurrent);
-        int last = Math.Min(nodes.Count - 1, current + ActionsAfterCurrent);
-        if (first > 0) rows.Add(new MiniTimelineRow(null, first));
-        for (int index = first; index <= last; index++) rows.Add(new MiniTimelineRow(nodes[index]));
-        if (last + 1 < nodes.Count) rows.Add(new MiniTimelineRow(null, nodes.Count - last - 1));
-        return rows;
-    }
-
-    private static IReadOnlyList<MiniTimelineRow> ClipEdge(IReadOnlyList<TimelineNodeSnapshot> nodes)
-    {
-        const int previewCount = 2;
-        List<MiniTimelineRow> rows = nodes.Take(previewCount).Select(node => new MiniTimelineRow(node)).ToList();
-        if (nodes.Count > previewCount) rows.Add(new MiniTimelineRow(null, nodes.Count - previewCount));
-        return rows;
-    }
-
-    private static RawSegment BuildSegments(TimelineNodeSnapshot start, RawSegment? parent)
-    {
-        List<TimelineNodeSnapshot> chain = [start];
-        TimelineNodeSnapshot tail = start;
-        while (tail.Children.Count == 1)
-        {
-            tail = tail.Children[0];
-            chain.Add(tail);
-        }
-        RawSegment segment = new(start.NodeId, chain, parent);
-        segment.Children.AddRange(tail.Children.Select(child => BuildSegments(child, segment)));
-        return segment;
-    }
-
-    private static IEnumerable<RawSegment> Flatten(RawSegment root)
-    {
-        yield return root;
-        foreach (RawSegment child in root.Children)
-        foreach (RawSegment descendant in Flatten(child)) yield return descendant;
-    }
-
-    private sealed class RawSegment(string id, IReadOnlyList<TimelineNodeSnapshot> nodes, RawSegment? parent)
-    {
-        public string Id { get; } = id;
-        public IReadOnlyList<TimelineNodeSnapshot> Nodes { get; } = nodes;
-        public RawSegment? Parent { get; } = parent;
-        public List<RawSegment> Children { get; } = [];
+        path.Add(node);
+        if (node.NodeId == nodeId) return true;
+        foreach (TimelineNodeSnapshot child in node.Children)
+            if (FindPath(child, nodeId, path)) return true;
+        path.RemoveAt(path.Count - 1);
+        return false;
     }
 }

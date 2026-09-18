@@ -15,8 +15,10 @@ internal sealed partial class TimelineMiniGraph : Control
     private HashSet<string> _firstStepSegmentNodeIds = new(StringComparer.Ordinal);
     private TimelineSnapshot? _snapshot;
     private CompactTimelineLayoutResult? _layout;
-    private string? _selectedNodeId;
-    private string? _preferredNextNodeId;
+    private string? _focusedNodeId;
+    private int _selectedBranchIndex;
+    private int _branchWindowStart;
+    private MiniTimelineProjection? _projection;
     private string? _lastCurrentNodeId;
     private string? _hoveredItemId;
     private Vector2 _hoverPosition;
@@ -47,6 +49,12 @@ internal sealed partial class TimelineMiniGraph : Control
 
     public void ResetToCurrent()
     {
+        if (_snapshot != null)
+        {
+            _focusedNodeId = _snapshot.CurrentNodeId;
+            InitializeBranchSelection();
+            _layout = null;
+        }
         _zoom = CalculateReadableZoom();
         CenterCurrent();
     }
@@ -59,14 +67,15 @@ internal sealed partial class TimelineMiniGraph : Control
         _layout = null;
         if (snapshot == null)
         {
-            _selectedNodeId = null;
+            _focusedNodeId = null;
+            _projection = null;
             return;
         }
-        if (currentChanged || _selectedNodeId == null || Find(snapshot.Root, _selectedNodeId) == null)
-            _selectedNodeId = snapshot.CurrentNodeId;
-        if (currentChanged || _preferredNextNodeId != null
-            && Find(snapshot.Root, _preferredNextNodeId) == null)
-            _preferredNextNodeId = null;
+        if (currentChanged || _focusedNodeId == null || Find(snapshot.Root, _focusedNodeId) == null)
+        {
+            _focusedNodeId = snapshot.CurrentNodeId;
+            InitializeBranchSelection();
+        }
         if (currentChanged) Callable.From(ResetToCurrent).CallDeferred();
         QueueRedraw();
     }
@@ -139,16 +148,18 @@ internal sealed partial class TimelineMiniGraph : Control
 
     private CompactTimelineLayoutResult BuildLayout()
     {
-        MiniTimelineSegment root = MiniTimelineProjector.Create(_snapshot!, _preferredNextNodeId);
+        _projection = MiniTimelineProjector.Create(_snapshot!, _focusedNodeId,
+            _selectedBranchIndex, _branchWindowStart);
+        _focusedNodeId = _projection.FocusedNodeId;
+        _selectedBranchIndex = _projection.SelectedBranchIndex;
+        _branchWindowStart = _projection.BranchWindowStart;
+        MiniTimelineSegment root = _projection.Root;
         Font font = RitsuShellTheme.Current.Font.Body;
         Font bold = RitsuShellTheme.Current.Font.BodyBold;
-        TimelineNodeSnapshot? current = Find(_snapshot!.Root, _snapshot.CurrentNodeId);
-        _immediateNextNodeIds = current?.Children.Select(child => child.NodeId)
-            .ToHashSet(StringComparer.Ordinal) ?? new HashSet<string>(StringComparer.Ordinal);
-        _firstStepSegmentNodeIds = Flatten(root)
-            .Where(segment => segment.Rows.Any(row => row.Node != null
-                && _immediateNextNodeIds.Contains(row.Node.NodeId)))
-            .SelectMany(segment => segment.Rows.Where(row => row.Node != null).Select(row => row.Node!.NodeId))
+        _immediateNextNodeIds = _projection.VisibleBranchNodeIds.ToHashSet(StringComparer.Ordinal);
+        _firstStepSegmentNodeIds = Flatten(root).SelectMany(segment => segment.Rows)
+            .Where(row => row.Node != null && row.IsBranchFirstStep)
+            .Select(row => row.Node!.NodeId)
             .ToHashSet(StringComparer.Ordinal);
         return CompactTimelineLayout.Create(root,
             row => RowWidth(row, font),
@@ -196,16 +207,20 @@ internal sealed partial class TimelineMiniGraph : Control
         }
 
         TimelineNodeSnapshot node = row.Node!;
-        bool selected = node.NodeId == _selectedNodeId || node.NodeId == _preferredNextNodeId;
+        bool focused = row.IsFocused;
+        bool selectedBranch = row.IsSelectedBranch;
         Color accent = node.IsCurrent ? new Color("f4b860")
             : node.Outcome == TimelineOutcome.Victory ? new Color("62d69b")
             : node.Outcome == TimelineOutcome.Defeat ? new Color("e96b70")
             : node.IsOnCurrentPath ? new Color("70b7ed") : new Color("9a8fb5");
-        Color background = selected ? new Color("755522") : new Color(theme.Surface.Entry.Bg, 0.98f);
-        DrawCard(rect, background, selected ? new Color("ffd166") : accent, node.IsCurrent || selected ? 3 : 1.5f);
+        Color background = focused ? new Color("755522")
+            : selectedBranch ? new Color("233f58") : new Color(theme.Surface.Entry.Bg, 0.98f);
+        Color border = focused ? new Color("ffd166")
+            : selectedBranch ? new Color("70d7ff") : accent;
+        DrawCard(rect, background, border, focused ? 4 : selectedBranch ? 3 : node.IsCurrent ? 2.5f : 1.5f);
         string fullText = RowText(row);
         string prefix = node.IsCurrent ? "▶ " : "";
-        Font textFont = selected || _immediateNextNodeIds.Contains(node.NodeId)
+        Font textFont = focused || selectedBranch || _immediateNextNodeIds.Contains(node.NodeId)
             ? theme.Font.BodyBold : theme.Font.Body;
         if (_immediateNextNodeIds.Contains(node.NodeId))
         {
@@ -213,14 +228,14 @@ internal sealed partial class TimelineMiniGraph : Control
             for (int index = 0; index < lines.Count; index++)
                 DrawString(textFont, rect.Position + new Vector2(9, 22 + index * 19),
                     (index == 0 ? prefix : "") + lines[index], HorizontalAlignment.Left,
-                    rect.Size.X - 18, 16, selected ? Colors.White : accent);
+                    rect.Size.X - 18, 16, focused || selectedBranch ? Colors.White : accent);
         }
         else
         {
             string shown = prefix + ClipToWidth(fullText, textFont,
                 rect.Size.X - 18 - MeasureText(prefix, theme.Font.BodyBold, 16), 16);
             DrawString(textFont, rect.Position + new Vector2(9, 22), shown,
-                HorizontalAlignment.Left, rect.Size.X - 18, 16, selected ? Colors.White : accent);
+                HorizontalAlignment.Left, rect.Size.X - 18, 16, focused || selectedBranch ? Colors.White : accent);
         }
         _hitAreas.Add(new HitArea(rect, item.Id, node.NodeId, null, fullText));
     }
@@ -273,7 +288,7 @@ internal sealed partial class TimelineMiniGraph : Control
         if (area == null) return;
         if (area.NodeId != null)
         {
-            _selectedNodeId = area.NodeId;
+            SetFocus(area.NodeId);
             NodeActivated?.Invoke(area.NodeId);
         }
         else if (area.MoreBranchesNodeId != null)
@@ -283,27 +298,27 @@ internal sealed partial class TimelineMiniGraph : Control
 
     private void DrawBranchNavigator(RitsuShellTheme theme)
     {
-        if (_snapshot == null || _selectedNodeId == null) return;
-        TimelineNodeSnapshot? selected = Find(_snapshot.Root, _selectedNodeId);
-        if (selected == null) return;
+        if (_snapshot == null || _focusedNodeId == null) return;
+        TimelineNodeSnapshot? focused = Find(_snapshot.Root, _focusedNodeId);
+        if (focused == null) return;
         foreach (BranchButton button in BranchButtons())
         {
-            bool enabled = CanNavigate(button.Direction, selected);
+            bool enabled = CanNavigate(button.Direction, focused);
             Color border = enabled ? new Color("70b7ed") : new Color("53606d");
             Color text = enabled ? theme.Text.LabelPrimary : theme.Text.LabelSecondary;
             DrawCard(button.Rect, new Color(theme.Surface.Entry.Bg, enabled ? 0.98f : 0.72f), border, 1.5f);
             DrawString(theme.Font.BodyBold, button.Rect.Position + new Vector2(0, 20), button.Label,
                 HorizontalAlignment.Center, button.Rect.Size.X, 16, text);
         }
-        TimelineNodeSnapshot? parent = FindParent(_snapshot.Root, selected.NodeId);
-        IReadOnlyList<TimelineNodeSnapshot> siblings = parent == null ? [] : OrderedChildren(parent);
-        if (siblings.Count > 1)
+        if (_projection is { BranchCount: > 0 } projection)
         {
-            int index = siblings.ToList().FindIndex(node => node.NodeId == selected.NodeId);
-            string position = $"{index + 1}/{siblings.Count}";
-            Rect2 label = new(Size.X - 103, 70, 96, 20);
+            int end = Math.Min(projection.BranchCount,
+                projection.BranchWindowStart + MiniTimelineProjector.VisibleBranchCount);
+            string position = HomuraText.BranchWindow(projection.SelectedBranchIndex + 1,
+                projection.BranchCount, projection.BranchWindowStart + 1, end);
+            Rect2 label = new(Math.Max(6, Size.X - 225), 70, Math.Min(218, Size.X - 12), 20);
             DrawString(theme.Font.BodyBold, label.Position + new Vector2(0, 16), position,
-                HorizontalAlignment.Center, label.Size.X, 13, theme.Text.LabelSecondary);
+                HorizontalAlignment.Right, label.Size.X, 12, theme.Text.LabelSecondary);
         }
     }
 
@@ -326,54 +341,72 @@ internal sealed partial class TimelineMiniGraph : Control
         return direction switch
         {
             NavigationDirection.Up => parent != null,
-            NavigationDirection.Down => selected.Children.Count > 0,
-            NavigationDirection.Left or NavigationDirection.Right =>
-                (parent != null && parent.Children.Count > 1) || selected.Children.Count > 1,
+            NavigationDirection.Down => selected.Children.Count > 0 && _selectedBranchIndex >= 0,
+            NavigationDirection.Left => _selectedBranchIndex > 0,
+            NavigationDirection.Right => _selectedBranchIndex >= 0
+                && _selectedBranchIndex + 1 < selected.Children.Count,
             _ => false,
         };
     }
 
     private void Navigate(NavigationDirection direction)
     {
-        if (_snapshot == null || _selectedNodeId == null) return;
-        TimelineNodeSnapshot? selected = Find(_snapshot.Root, _selectedNodeId);
+        if (_snapshot == null || _focusedNodeId == null) return;
+        TimelineNodeSnapshot? selected = Find(_snapshot.Root, _focusedNodeId);
         if (selected == null || !CanNavigate(direction, selected)) return;
-        TimelineNodeSnapshot? target = null;
-        TimelineNodeSnapshot? parent = FindParent(_snapshot.Root, selected.NodeId);
-        if (direction == NavigationDirection.Up) target = parent;
-        else if (direction == NavigationDirection.Down)
-            target = OrderedChildren(selected).FirstOrDefault();
-        else
+        if (direction == NavigationDirection.Left || direction == NavigationDirection.Right)
         {
-            IReadOnlyList<TimelineNodeSnapshot> siblings;
-            int index;
-            if (parent != null && parent.Children.Count > 1)
-            {
-                siblings = OrderedChildren(parent);
-                index = siblings.ToList().FindIndex(node => node.NodeId == selected.NodeId);
-            }
-            else
-            {
-                siblings = OrderedChildren(selected);
-                index = direction == NavigationDirection.Right ? -1 : 0;
-            }
             int delta = direction == NavigationDirection.Left ? -1 : 1;
-            target = siblings[(index + delta + siblings.Count) % siblings.Count];
+            _selectedBranchIndex += delta;
+            if (_selectedBranchIndex < _branchWindowStart) _branchWindowStart = _selectedBranchIndex;
+            else if (_selectedBranchIndex >= _branchWindowStart + MiniTimelineProjector.VisibleBranchCount)
+                _branchWindowStart = _selectedBranchIndex - MiniTimelineProjector.VisibleBranchCount + 1;
+            _layout = null;
+            CenterCurrent();
+            QueueRedraw();
+            return;
         }
+        TimelineNodeSnapshot? target;
+        int preferredChildIndex = -1;
+        if (direction == NavigationDirection.Up)
+        {
+            target = FindParent(_snapshot.Root, selected.NodeId);
+            if (target != null) preferredChildIndex = target.Children.ToList()
+                .FindIndex(child => child.NodeId == selected.NodeId);
+        }
+        else target = selected.Children[_selectedBranchIndex];
         if (target == null) return;
-        _selectedNodeId = target.NodeId;
-        TimelineNodeSnapshot? current = Find(_snapshot.Root, _snapshot.CurrentNodeId);
-        _preferredNextNodeId = current?.Children.Any(child => child.NodeId == target.NodeId) == true
-            ? target.NodeId : null;
+        SetFocus(target.NodeId, preferredChildIndex);
+        NodeActivated?.Invoke(target.NodeId);
+    }
+
+    private void SetFocus(string nodeId, int preferredChildIndex = -1)
+    {
+        if (_snapshot == null || Find(_snapshot.Root, nodeId) == null) return;
+        _focusedNodeId = nodeId;
+        InitializeBranchSelection(preferredChildIndex);
         _layout = null;
-        ResetToCurrent();
-        NodeActivated?.Invoke(_selectedNodeId);
+        _zoom = CalculateReadableZoom();
+        CenterCurrent();
         QueueRedraw();
     }
 
-    private static IReadOnlyList<TimelineNodeSnapshot> OrderedChildren(TimelineNodeSnapshot node) =>
-        node.Children.OrderByDescending(child => child.IsOnCurrentPath)
-            .ThenByDescending(child => child.LastVisitedAt).ToArray();
+    private void InitializeBranchSelection(int preferredChildIndex = -1)
+    {
+        if (_snapshot == null || _focusedNodeId == null) return;
+        TimelineNodeSnapshot? focus = Find(_snapshot.Root, _focusedNodeId);
+        if (focus == null || focus.Children.Count == 0)
+        {
+            _selectedBranchIndex = -1;
+            _branchWindowStart = 0;
+            return;
+        }
+        int currentPathIndex = focus.Children.ToList().FindIndex(child => child.IsOnCurrentPath);
+        _selectedBranchIndex = preferredChildIndex >= 0 ? preferredChildIndex
+            : currentPathIndex >= 0 ? currentPathIndex : 0;
+        _branchWindowStart = Math.Clamp(_selectedBranchIndex - MiniTimelineProjector.VisibleBranchCount + 1,
+            0, Math.Max(0, focus.Children.Count - MiniTimelineProjector.VisibleBranchCount));
+    }
 
     private void DrawHoverTooltip(RitsuShellTheme theme)
     {
@@ -414,9 +447,7 @@ internal sealed partial class TimelineMiniGraph : Control
 
     private Rect2 FocusBounds(CompactTimelineLayoutResult layout)
     {
-        CompactTimelineItem[] focusItems = layout.Items.Where(item =>
-            item.Id == layout.CurrentItemId
-            || item.Row?.Node != null && _immediateNextNodeIds.Contains(item.Row.Node.NodeId)).ToArray();
+        CompactTimelineItem[] focusItems = layout.Items.Where(item => item.Id == layout.CurrentItemId).ToArray();
         if (focusItems.Length == 0) return default;
         float left = focusItems.Min(item => item.X), top = focusItems.Min(item => item.Y);
         float right = focusItems.Max(item => item.X + item.Width);

@@ -42,7 +42,7 @@ public static class CompactTimelineLayout
         Dictionary<string, SegmentMetrics> metrics = [];
         Measure(root);
         float centerWidth = Flatten(root)
-            .Where(ContainsCurrent)
+            .Where(ContainsFocus)
             .Select(segment => metrics[segment.Id].Width)
             .DefaultIfEmpty(180f)
             .Max();
@@ -85,10 +85,10 @@ public static class CompactTimelineLayout
             CompactTimelineItem? to = normalized.FirstOrDefault(item =>
                 ReferenceEquals(item.Segment, child) && !item.IsMoreBranches);
             if (from != null && to != null)
-                edges.Add(new CompactTimelineEdge(from.Id, to.Id, ContainsCurrent(child)));
+                edges.Add(new CompactTimelineEdge(from.Id, to.Id, ContainsFocus(child)));
         }
 
-        string? currentId = normalized.FirstOrDefault(item => item.Row?.Node?.IsCurrent == true)?.Id;
+        string? currentId = normalized.FirstOrDefault(item => item.Row?.IsFocused == true)?.Id;
         return new CompactTimelineLayoutResult(normalized, edges,
             maxX - minX + Margin * 2, maxY - minY + Margin * 2, currentId);
 
@@ -114,7 +114,7 @@ public static class CompactTimelineLayout
             float x = (centerWidth - size.Width) / 2;
             PlaceItems(segment, x, y);
             float childY = y + size.OwnHeight + BranchGap;
-            MiniTimelineSegment? spineChild = segment.Children.FirstOrDefault(ContainsCurrent);
+            MiniTimelineSegment? spineChild = segment.Children.FirstOrDefault(ContainsFocus);
             int sideIndex = 0;
             foreach (MiniTimelineSegment child in segment.Children.Where(child => !ReferenceEquals(child, spineChild)))
             {
@@ -184,9 +184,9 @@ public static class CompactTimelineLayout
         bool IsCurrentPath(CompactTimelineItem item) => item.Row?.Node?.IsOnCurrentPath == true;
     }
 
-    private static bool ContainsCurrent(MiniTimelineSegment segment) =>
-        segment.Rows.Any(row => row.Node?.IsCurrent == true)
-        || segment.Children.Any(ContainsCurrent);
+    private static bool ContainsFocus(MiniTimelineSegment segment) =>
+        segment.Rows.Any(row => row.IsFocused)
+        || segment.Children.Any(ContainsFocus);
 
     private static IEnumerable<MiniTimelineSegment> Flatten(MiniTimelineSegment root)
     {

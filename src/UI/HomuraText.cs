@@ -57,4 +57,7 @@ internal static class HomuraText
     public static string OutcomeVictory => Chinese ? "胜利" : "Win";
     public static string OutcomeDefeat => Chinese ? "失败" : "Loss";
     public static string OutcomeAborted => Chinese ? "已回溯" : "SL";
+    public static string BranchWindow(int selected, int total, int first, int last) => Chinese
+        ? $"分支 {selected}/{total} · 显示 {first}–{last}"
+        : $"Branch {selected}/{total} · showing {first}–{last}";
 }

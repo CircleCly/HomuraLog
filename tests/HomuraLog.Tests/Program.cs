@@ -79,13 +79,14 @@ foreach (TimelineAction action in projectionActions)
 var projectionCursor = new TimelineTree(projectionRecord);
 foreach (TimelineAction action in projectionActions.Take(5))
     Assert(projectionCursor.FollowExisting(action), "Projection fixture path should exist.");
-MiniTimelineSegment chainProjection = MiniTimelineProjector.Create(projectionCursor.Snapshot());
-Assert(chainProjection.Rows.Count(row => row.Node != null) == 6,
-    "Current mini segment must retain three previous, current, and two following actions.");
-Assert(chainProjection.Rows.Any(row => row.IsOmission && row.OmittedCount == 2),
-    "Current mini segment must report omitted earlier actions.");
-Assert(chainProjection.Rows.Any(row => row.IsOmission && row.OmittedCount == 3),
-    "Current mini segment must report omitted later actions.");
+TimelineSnapshot chainSnapshot = projectionCursor.Snapshot();
+MiniTimelineProjection chainProjection = MiniTimelineProjector.Create(
+    chainSnapshot, chainSnapshot.CurrentNodeId, 0, 0);
+Assert(chainProjection.Root.Rows.Count == 3 && chainProjection.Root.Rows[^1].IsFocused,
+    "Mini projection must retain exactly two parent actions above the focus.");
+Assert(chainProjection.Root.Children.Count == 1
+    && chainProjection.Root.Children[0].Rows.Count == 3,
+    "A visible branch must contain its first action and at most two continuation actions.");
 
 var fanoutRecord = Record("projection-fanout");
 TimelineAction[] fanoutActions = Enumerable.Range(0, 8)
@@ -95,27 +96,32 @@ foreach (TimelineAction action in fanoutActions)
     new TimelineTree(fanoutRecord).Append(action, state, DateTimeOffset.UtcNow.AddSeconds(Array.IndexOf(fanoutActions, action)));
 var fanoutCursor = new TimelineTree(fanoutRecord);
 Assert(fanoutCursor.FollowExisting(fanoutActions[0]), "Current fanout branch should exist.");
-MiniTimelineSegment fanoutProjection = MiniTimelineProjector.Create(fanoutCursor.Snapshot());
-Assert(fanoutProjection.Children.Count == 6 && fanoutProjection.HiddenBranchCount == 2,
-    "Mini projection must cap a decision at six branches and report the remainder.");
-Assert(fanoutProjection.Children.Any(child => child.Rows.Any(row => row.Node?.IsCurrent == true)),
-    "The current branch must survive branch capping regardless of recency.");
-Assert(fanoutProjection.Children.Any(child => child.Rows.Any(row => row.Node?.Action?.SourceId == "CARD_7")),
-    "Non-current mini branches must be selected by most recent visit.");
-MiniTimelineSegment currentDecisionProjection = MiniTimelineProjector.Create(new TimelineTree(fanoutRecord).Snapshot());
-Assert(currentDecisionProjection.Children.Count == 6 && currentDecisionProjection.HiddenBranchCount == 2,
-    "The current decision must retain the six-branch cap.");
-string hiddenBranchId = fanoutRecord.Root.Children[fanoutActions[0].Key].NodeId;
-MiniTimelineSegment preferredBranchProjection = MiniTimelineProjector.Create(
-    new TimelineTree(fanoutRecord).Snapshot(), hiddenBranchId);
-Assert(preferredBranchProjection.Children.Count == 6
-    && preferredBranchProjection.HiddenBranchCount == 2
-    && preferredBranchProjection.Children.Any(child =>
-        child.Rows.Any(row => row.Node?.NodeId == hiddenBranchId)),
-    "Selecting a hidden immediate branch must swap it into the capped projection.");
+TimelineSnapshot decisionSnapshot = new TimelineTree(fanoutRecord).Snapshot();
+MiniTimelineProjection fanoutProjection = MiniTimelineProjector.Create(
+    decisionSnapshot, decisionSnapshot.CurrentNodeId, 0, 0);
+Assert(fanoutProjection.Root.Children.Count == 3 && fanoutProjection.BranchCount == 8,
+    "Mini projection must expose a three-branch window without losing the total count.");
+Assert(fanoutProjection.VisibleBranchNodeIds.SequenceEqual(
+        fanoutRecord.Root.Children.Values.Take(3).Select(node => node.NodeId)),
+    "Branch ordering must remain stable in first-explored order.");
+MiniTimelineProjection shiftedProjection = MiniTimelineProjector.Create(
+    decisionSnapshot, decisionSnapshot.CurrentNodeId, 3, 0);
+Assert(shiftedProjection.BranchWindowStart == 1 && shiftedProjection.SelectedBranchIndex == 3,
+    "Selecting branch four must slide the visible window from 1-3 to 2-4.");
+Assert(shiftedProjection.Root.Children[^1].Rows[0].IsSelectedBranch,
+    "The selected candidate must be marked independently from the focused node.");
+MiniTimelineProjection insideWindowProjection = MiniTimelineProjector.Create(
+    decisionSnapshot, decisionSnapshot.CurrentNodeId, 2, 0);
+Assert(insideWindowProjection.BranchWindowStart == 0,
+    "Moving inside branches 1-3 must not slide the window.");
+MiniTimelineProjection rightBoundaryProjection = MiniTimelineProjector.Create(
+    decisionSnapshot, decisionSnapshot.CurrentNodeId, 99, 99);
+Assert(rightBoundaryProjection.SelectedBranchIndex == 7
+    && rightBoundaryProjection.BranchWindowStart == 5,
+    "Branch selection and its three-item window must clamp at the right boundary.");
 
 CompactTimelineLayoutResult compactFanout = CompactTimelineLayout.Create(
-    fanoutProjection, _ => 180, _ => 180);
+    fanoutProjection.Root, _ => 180, _ => 180);
 Assert(compactFanout.CurrentItemId != null, "Compact layout must identify the current action.");
 Assert(compactFanout.Edges.Count > 0, "Compact layout must generate arrows after placing nodes.");
 CompactTimelineItem[] compactItems = compactFanout.Items.ToArray();
@@ -131,12 +137,12 @@ int fanoutLanes = compactItems.Where(item => !item.IsMoreBranches)
     .Select(item => MathF.Round(item.X)).Distinct().Count();
 Assert(fanoutLanes <= 3,
     "A six-way decision must use the center, left, and right lanes instead of six leaf columns.");
-int projectedItems = FlattenMini(fanoutProjection).Sum(segment => segment.Rows.Count
+int projectedItems = FlattenMini(fanoutProjection.Root).Sum(segment => segment.Rows.Count
     + (segment.HiddenBranchCount > 0 ? 1 : 0));
 Assert(compactItems.Length == projectedItems,
     "Compact layout must preserve every projected action, omission, and hidden-branch prompt.");
 CompactTimelineLayoutResult variableHeightLayout = CompactTimelineLayout.Create(
-    preferredBranchProjection, _ => 160, _ => 160,
+    shiftedProjection.Root, _ => 160, _ => 160,
     row => row.Node?.Action == null ? CompactTimelineLayout.ItemHeight : 72);
 Assert(variableHeightLayout.Items.Where(item => item.Row?.Node?.Action != null)
         .All(item => item.Height == 72),

@@ -4,16 +4,17 @@ using STS2RitsuLib.Ui.Shell.Theme;
 
 namespace HomuraLog.UI;
 
-/// <summary>Compact viewport over the same compressed worldline graph used by fullscreen mode.</summary>
+/// <summary>A compact, independently laid out viewport over the current timeline neighborhood.</summary>
 internal sealed partial class TimelineMiniGraph : Control
 {
-    private const float NodeWidth = 320f;
-    private const float RowHeight = 34f;
-    private readonly List<(Rect2 Rect, string NodeId)> _hitAreas = [];
-    private readonly List<(Rect2 Rect, string NodeId)> _moreBranchHitAreas = [];
+    private const float MinReadableZoom = 0.78f;
+    private readonly List<HitArea> _hitAreas = [];
     private TimelineSnapshot? _snapshot;
+    private CompactTimelineLayoutResult? _layout;
     private string? _selectedNodeId;
     private string? _lastCurrentNodeId;
+    private string? _hoveredItemId;
+    private Vector2 _hoverPosition;
     private Vector2 _pan;
     private float _zoom = 0.9f;
     private bool _panning;
@@ -22,22 +23,35 @@ internal sealed partial class TimelineMiniGraph : Control
 
     public TimelineMiniGraph()
     {
-        CustomMinimumSize = new Vector2(560, 390);
+        CustomMinimumSize = new Vector2(340, 245);
         MouseFilter = MouseFilterEnum.Stop;
         ClipContents = true;
+        TooltipText = HomuraText.GraphHelp;
         Resized += QueueRedraw;
     }
 
     public event Action<string>? NodeActivated;
     public event Action<string>? MoreBranchesActivated;
 
-    public void ResetToCurrent() => CenterCurrent();
+    public void RefreshLocalization()
+    {
+        TooltipText = HomuraText.GraphHelp;
+        _layout = null;
+        QueueRedraw();
+    }
+
+    public void ResetToCurrent()
+    {
+        _zoom = CalculateReadableZoom();
+        CenterCurrent();
+    }
 
     public void SetSnapshot(TimelineSnapshot? snapshot)
     {
         bool currentChanged = snapshot?.CurrentNodeId != _lastCurrentNodeId;
         _snapshot = snapshot;
         _lastCurrentNodeId = snapshot?.CurrentNodeId;
+        _layout = null;
         if (snapshot == null)
         {
             _selectedNodeId = null;
@@ -45,7 +59,7 @@ internal sealed partial class TimelineMiniGraph : Control
         }
         if (currentChanged || _selectedNodeId == null || Find(snapshot.Root, _selectedNodeId) == null)
             _selectedNodeId = snapshot.CurrentNodeId;
-        if (currentChanged) Callable.From(CenterCurrent).CallDeferred();
+        if (currentChanged) Callable.From(ResetToCurrent).CallDeferred();
         QueueRedraw();
     }
 
@@ -55,7 +69,7 @@ internal sealed partial class TimelineMiniGraph : Control
             && wheel.Pressed && wheel.ButtonIndex is MouseButton.WheelUp or MouseButton.WheelDown)
         {
             float oldZoom = _zoom;
-            _zoom = Math.Clamp(_zoom * (wheel.ButtonIndex == MouseButton.WheelUp ? 1.12f : 0.89f), 0.45f, 1.6f);
+            _zoom = Math.Clamp(_zoom * (wheel.ButtonIndex == MouseButton.WheelUp ? 1.12f : 0.89f), 0.55f, 1.6f);
             Vector2 worldAtCursor = (wheel.Position - _pan) / oldZoom;
             _pan = wheel.Position - worldAtCursor * _zoom;
             QueueRedraw();
@@ -73,33 +87,25 @@ internal sealed partial class TimelineMiniGraph : Control
             else
             {
                 _panning = false;
-                if (!_dragged)
-                {
-                    Vector2 world = (button.Position - _pan) / _zoom;
-                    for (int index = _hitAreas.Count - 1; index >= 0; index--)
-                    {
-                        if (!_hitAreas[index].Rect.HasPoint(world)) continue;
-                        _selectedNodeId = _hitAreas[index].NodeId;
-                        NodeActivated?.Invoke(_selectedNodeId);
-                        QueueRedraw();
-                        AcceptEvent();
-                        return;
-                    }
-                    for (int index = _moreBranchHitAreas.Count - 1; index >= 0; index--)
-                    {
-                        if (!_moreBranchHitAreas[index].Rect.HasPoint(world)) continue;
-                        MoreBranchesActivated?.Invoke(_moreBranchHitAreas[index].NodeId);
-                        break;
-                    }
-                }
+                if (!_dragged) ActivateAt(button.Position);
             }
             AcceptEvent();
+            return;
         }
-        else if (inputEvent is InputEventMouseMotion motion && _panning)
+        if (inputEvent is InputEventMouseMotion motion)
         {
-            _dragDistance += motion.Relative.Length();
-            if (_dragDistance >= 6f) _dragged = true;
-            _pan += motion.Relative;
+            _hoverPosition = motion.Position;
+            if (_panning)
+            {
+                _dragDistance += motion.Relative.Length();
+                if (_dragDistance >= 6f) _dragged = true;
+                _pan += motion.Relative;
+            }
+            else
+            {
+                Vector2 world = (motion.Position - _pan) / _zoom;
+                _hoveredItemId = _hitAreas.LastOrDefault(area => area.Rect.HasPoint(world))?.ItemId;
+            }
             QueueRedraw();
             AcceptEvent();
         }
@@ -108,134 +114,154 @@ internal sealed partial class TimelineMiniGraph : Control
     public override void _Draw()
     {
         _hitAreas.Clear();
-        _moreBranchHitAreas.Clear();
         RitsuShellTheme theme = RitsuShellTheme.Current;
         DrawRect(new Rect2(Vector2.Zero, Size), new Color(theme.Surface.Inset.Bg, 0.98f), true);
         if (_snapshot == null) return;
 
-        MiniTimelineSegment root = MiniTimelineProjector.Create(_snapshot);
-        List<MiniTimelineSegment> segments = Flatten(root).ToList();
-        Dictionary<string, Vector2> positions = Layout(root);
+        _layout = BuildLayout();
+        Dictionary<string, CompactTimelineItem> byId = _layout.Items.ToDictionary(item => item.Id);
         DrawSetTransform(_pan, 0, Vector2.One * _zoom);
-        foreach (MiniTimelineSegment parent in segments)
-        foreach (MiniTimelineSegment child in parent.Children)
-        {
-            Rect2 from = SegmentRect(parent, positions[parent.Id]);
-            Rect2 to = SegmentRect(child, positions[child.Id]);
-            Vector2 start = new(from.GetCenter().X, from.End.Y);
-            Vector2 end = new(to.GetCenter().X, to.Position.Y);
-            float middle = (start.Y + end.Y) / 2;
-            bool currentPath = child.Rows.Any(row => row.Node?.IsOnCurrentPath == true);
-            Color line = currentPath ? new Color("70b7ed") : new Color("71859a");
-            DrawPolyline([start, new Vector2(start.X, middle), new Vector2(end.X, middle), end],
-                line, currentPath ? 4 : 2.5f, true);
-            DrawColoredPolygon([end, end + new Vector2(-8, -14), end + new Vector2(8, -14)], line);
-        }
-        foreach (MiniTimelineSegment segment in segments) DrawSegment(segment, positions[segment.Id], theme);
+        foreach (CompactTimelineEdge edge in _layout.Edges)
+            DrawEdge(byId[edge.FromItemId], byId[edge.ToItemId], edge.IsCurrentPath);
+        foreach (CompactTimelineItem item in _layout.Items) DrawItem(item, theme);
         DrawSetTransform(Vector2.Zero, 0, Vector2.One);
-
+        DrawHoverTooltip(theme);
     }
 
-    private void DrawSegment(MiniTimelineSegment segment, Vector2 position, RitsuShellTheme theme)
+    private CompactTimelineLayoutResult BuildLayout()
     {
-        Rect2 rect = SegmentRect(segment, position);
-        TimelineNodeSnapshot? tail = segment.Rows.LastOrDefault(row => row.Node != null)?.Node;
-        bool current = segment.Rows.Any(row => row.Node?.IsCurrent == true);
-        bool currentPath = segment.Rows.Any(row => row.Node?.IsOnCurrentPath == true);
-        Color accent = current ? new Color("f4b860")
-            : tail?.Outcome == TimelineOutcome.Victory ? new Color("62d69b")
-            : tail?.Outcome == TimelineOutcome.Defeat ? new Color("e96b70")
-            : currentPath ? new Color("70b7ed") : new Color("9a8fb5");
-        DrawCard(rect, new Color(theme.Surface.Entry.Bg, 0.98f), accent, current ? 4 : 2);
+        MiniTimelineSegment root = MiniTimelineProjector.Create(_snapshot!);
+        Font font = RitsuShellTheme.Current.Font.Body;
+        return CompactTimelineLayout.Create(root,
+            row => MeasureWidth(RowText(row), font, 14),
+            segment => MeasureWidth(HomuraText.MoreBranches(segment.HiddenBranchCount), font, 13));
+    }
 
-        Font body = theme.Font.Body;
-        Font bold = theme.Font.BodyBold;
-        TimelineNodeSnapshot? firstNode = segment.Rows.FirstOrDefault(row => row.Node != null)?.Node;
-        int actualRows = segment.Rows.Count(row => row.Node != null);
-        string title = firstNode?.Action == null ? HomuraText.Root
-            : actualRows == 1 ? HomuraText.Decision : $"{actualRows} {HomuraText.Decision}";
-        DrawString(bold, rect.Position + new Vector2(12, 23), title,
-            HorizontalAlignment.Left, rect.Size.X - 24, 16, accent);
-        for (int index = 0; index < segment.Rows.Count; index++)
+    private static float MeasureWidth(string text, Font font, int fontSize) =>
+        Math.Clamp(font.GetStringSize(text, HorizontalAlignment.Left, -1, fontSize).X + 24f, 150f, 200f);
+
+    private void DrawItem(CompactTimelineItem item, RitsuShellTheme theme)
+    {
+        Rect2 rect = new(item.X, item.Y, item.Width, item.Height);
+        if (item.IsMoreBranches)
         {
-            MiniTimelineRow projectionRow = segment.Rows[index];
-            Rect2 row = new(rect.Position + new Vector2(8, 31 + index * RowHeight),
-                new Vector2(rect.Size.X - 16, RowHeight - 3));
-            if (projectionRow.IsOmission)
-            {
-                DrawString(body, row.Position + new Vector2(9, 22), HomuraText.OmittedActions(projectionRow.OmittedCount),
-                    HorizontalAlignment.Center, row.Size.X - 18, 13, theme.Text.LabelSecondary);
-                continue;
-            }
-            TimelineNodeSnapshot node = projectionRow.Node!;
-            bool selected = node.NodeId == _selectedNodeId;
-            if (selected) DrawCard(row, new Color("755522"), new Color("ffd166"), 4);
-            string text = node.Action == null ? HomuraText.Root : HomuraOverlay.ActionText(node.Action);
-            DrawString(selected ? bold : body, row.Position + new Vector2(9, 22),
-                (node.IsCurrent ? "▶ " : "") + Clip(text, 39), HorizontalAlignment.Left,
-                row.Size.X - 18, 14, selected ? Colors.White
-                    : node.IsCurrent ? new Color("f4b860")
-                    : node.IsOnCurrentPath ? new Color("70b7ed") : theme.Text.LabelPrimary);
-            _hitAreas.Add((row, node.NodeId));
+            DrawCard(rect, new Color(theme.Surface.Entry.Bg, 0.96f), new Color("70b7ed"), 2);
+            string text = HomuraText.MoreBranches(item.Segment.HiddenBranchCount);
+            DrawString(theme.Font.BodyBold, rect.Position + new Vector2(9, 19), ClipToWidth(text, theme.Font.BodyBold, rect.Size.X - 18, 13),
+                HorizontalAlignment.Center, rect.Size.X - 18, 13, new Color("70b7ed"));
+            _hitAreas.Add(new HitArea(rect, item.Id, null, item.Segment.MoreBranchesNodeId, text));
+            return;
         }
-        if (segment.HiddenBranchCount > 0)
+
+        MiniTimelineRow row = item.Row!;
+        if (row.IsOmission)
         {
-            Rect2 more = new(rect.Position + new Vector2(8, 34 + segment.Rows.Count * RowHeight),
-                new Vector2(rect.Size.X - 16, 28));
-            DrawString(bold, more.Position + new Vector2(8, 20), HomuraText.MoreBranches(segment.HiddenBranchCount),
-                HorizontalAlignment.Center, more.Size.X - 16, 13, new Color("70b7ed"));
-            _moreBranchHitAreas.Add((more, segment.MoreBranchesNodeId));
+            string omitted = HomuraText.OmittedActions(row.OmittedCount);
+            DrawString(theme.Font.Body, rect.Position + new Vector2(8, 19), ClipToWidth(omitted, theme.Font.Body, rect.Size.X - 16, 13),
+                HorizontalAlignment.Center, rect.Size.X - 16, 13, theme.Text.LabelSecondary);
+            return;
         }
-        else if (tail != null)
-            DrawString(body, rect.End - new Vector2(rect.Size.X - 12, 10), HomuraText.Visits(tail.Visits),
-                HorizontalAlignment.Left, rect.Size.X - 24, 12, theme.Text.LabelSecondary);
+
+        TimelineNodeSnapshot node = row.Node!;
+        bool selected = node.NodeId == _selectedNodeId;
+        Color accent = node.IsCurrent ? new Color("f4b860")
+            : node.Outcome == TimelineOutcome.Victory ? new Color("62d69b")
+            : node.Outcome == TimelineOutcome.Defeat ? new Color("e96b70")
+            : node.IsOnCurrentPath ? new Color("70b7ed") : new Color("9a8fb5");
+        Color background = selected ? new Color("755522") : new Color(theme.Surface.Entry.Bg, 0.98f);
+        DrawCard(rect, background, selected ? new Color("ffd166") : accent, node.IsCurrent || selected ? 3 : 1.5f);
+        string fullText = RowText(row);
+        string prefix = node.IsCurrent ? "▶ " : "";
+        string shown = prefix + ClipToWidth(fullText, selected ? theme.Font.BodyBold : theme.Font.Body,
+            rect.Size.X - 18 - MeasureText(prefix, theme.Font.BodyBold, 14), 14);
+        DrawString(selected ? theme.Font.BodyBold : theme.Font.Body, rect.Position + new Vector2(9, 19), shown,
+            HorizontalAlignment.Left, rect.Size.X - 18, 14, selected ? Colors.White : accent);
+        _hitAreas.Add(new HitArea(rect, item.Id, node.NodeId, null, fullText));
+    }
+
+    private static float MeasureText(string text, Font font, int size) =>
+        font.GetStringSize(text, HorizontalAlignment.Left, -1, size).X;
+
+    private static string RowText(MiniTimelineRow row)
+    {
+        if (row.IsOmission) return HomuraText.OmittedActions(row.OmittedCount);
+        return row.Node!.Action == null ? HomuraText.Root : HomuraOverlay.ActionText(row.Node.Action);
+    }
+
+    private void DrawEdge(CompactTimelineItem from, CompactTimelineItem to, bool currentPath)
+    {
+        Rect2 fromRect = new(from.X, from.Y, from.Width, from.Height);
+        Rect2 toRect = new(to.X, to.Y, to.Width, to.Height);
+        Vector2 start;
+        Vector2 end;
+        Vector2[] line;
+        if (Math.Abs(fromRect.GetCenter().X - toRect.GetCenter().X) < 8)
+        {
+            start = new Vector2(fromRect.GetCenter().X, fromRect.End.Y);
+            end = new Vector2(toRect.GetCenter().X, toRect.Position.Y);
+            line = [start, end];
+        }
+        else
+        {
+            bool targetLeft = toRect.GetCenter().X < fromRect.GetCenter().X;
+            start = new Vector2(targetLeft ? fromRect.Position.X : fromRect.End.X, fromRect.GetCenter().Y);
+            end = new Vector2(toRect.GetCenter().X, toRect.Position.Y);
+            float gutterY = Math.Min(end.Y - 5, start.Y + 8);
+            line = [start, new Vector2(start.X, gutterY), new Vector2(end.X, gutterY), end];
+        }
+        Color color = currentPath ? new Color("70b7ed") : new Color("71859a");
+        DrawPolyline(line, color, currentPath ? 3f : 1.8f, true);
+        DrawColoredPolygon([end, end + new Vector2(-4, -7), end + new Vector2(4, -7)], color);
+    }
+
+    private void ActivateAt(Vector2 screenPosition)
+    {
+        Vector2 world = (screenPosition - _pan) / _zoom;
+        HitArea? area = _hitAreas.LastOrDefault(candidate => candidate.Rect.HasPoint(world));
+        if (area == null) return;
+        if (area.NodeId != null)
+        {
+            _selectedNodeId = area.NodeId;
+            NodeActivated?.Invoke(area.NodeId);
+        }
+        else if (area.MoreBranchesNodeId != null)
+            MoreBranchesActivated?.Invoke(area.MoreBranchesNodeId);
+        QueueRedraw();
+    }
+
+    private void DrawHoverTooltip(RitsuShellTheme theme)
+    {
+        if (_hoveredItemId == null) return;
+        HitArea? hit = _hitAreas.FirstOrDefault(area => area.ItemId == _hoveredItemId);
+        if (hit == null || string.IsNullOrWhiteSpace(hit.FullText)) return;
+        float width = Math.Min(330, Math.Max(130, MeasureText(hit.FullText, theme.Font.Body, 13) + 20));
+        Vector2 position = _hoverPosition + new Vector2(12, 14);
+        position.X = Math.Min(position.X, Size.X - width - 6);
+        position.Y = Math.Min(position.Y, Size.Y - 35);
+        Rect2 rect = new(position, new Vector2(width, 29));
+        DrawCard(rect, new Color(theme.Surface.Entry.Bg, 0.99f), new Color("71859a"), 1);
+        DrawString(theme.Font.Body, rect.Position + new Vector2(9, 20),
+            ClipToWidth(hit.FullText, theme.Font.Body, rect.Size.X - 18, 13),
+            HorizontalAlignment.Left, rect.Size.X - 18, 13, theme.Text.LabelPrimary);
     }
 
     private void CenterCurrent()
     {
         if (_snapshot == null || Size.X <= 0 || Size.Y <= 0) return;
-        MiniTimelineSegment root = MiniTimelineProjector.Create(_snapshot);
-        MiniTimelineSegment? current = Flatten(root).FirstOrDefault(segment =>
-            segment.Rows.Any(row => row.Node?.NodeId == _snapshot.CurrentNodeId));
+        _layout = BuildLayout();
+        CompactTimelineItem? current = _layout.Items.FirstOrDefault(item => item.Id == _layout.CurrentItemId);
         if (current == null) return;
-        Dictionary<string, Vector2> positions = Layout(root);
-        Rect2 rect = SegmentRect(current, positions[current.Id]);
-        _pan = Size / 2 - rect.GetCenter() * _zoom;
+        Vector2 center = new(current.X + current.Width / 2, current.Y + current.Height / 2);
+        _pan = Size / 2 - center * _zoom;
         QueueRedraw();
     }
 
-    private static Rect2 SegmentRect(MiniTimelineSegment segment, Vector2 position) =>
-        new(position, new Vector2(NodeWidth, 56 + segment.Rows.Count * RowHeight
-            + (segment.HiddenBranchCount > 0 ? 28 : 0)));
-
-    private static IEnumerable<MiniTimelineSegment> Flatten(MiniTimelineSegment root)
+    private float CalculateReadableZoom()
     {
-        yield return root;
-        foreach (MiniTimelineSegment child in root.Children)
-        foreach (MiniTimelineSegment descendant in Flatten(child)) yield return descendant;
-    }
-
-    private static Dictionary<string, Vector2> Layout(MiniTimelineSegment root)
-    {
-        Dictionary<string, Vector2> result = [];
-        float column = 0;
-        float Place(MiniTimelineSegment segment, float y)
-        {
-            float nextY = y + SegmentRect(segment, Vector2.Zero).Size.Y + 90;
-            float x;
-            if (segment.Children.Count == 0) x = column++ * 365;
-            else
-            {
-                float first = Place(segment.Children[0], nextY), last = first;
-                for (int index = 1; index < segment.Children.Count; index++)
-                    last = Place(segment.Children[index], nextY);
-                x = (first + last) / 2;
-            }
-            result[segment.Id] = new Vector2(x, y);
-            return x;
-        }
-        Place(root, 0);
-        return result;
+        if (_snapshot == null || Size.X <= 0) return 0.9f;
+        _layout = BuildLayout();
+        float fitWidth = (Size.X - 16) / Math.Max(1, _layout.Width);
+        return Math.Clamp(fitWidth, MinReadableZoom, 1f);
     }
 
     private static TimelineNodeSnapshot? Find(TimelineNodeSnapshot node, string nodeId)
@@ -254,14 +280,32 @@ internal sealed partial class TimelineMiniGraph : Control
         int width = (int)Math.Ceiling(borderWidth);
         DrawStyleBox(new StyleBoxFlat
         {
-            BgColor = background, BorderColor = border,
-            BorderWidthLeft = width, BorderWidthTop = width,
-            BorderWidthRight = width, BorderWidthBottom = width,
-            CornerRadiusTopLeft = 7, CornerRadiusTopRight = 7,
-            CornerRadiusBottomLeft = 7, CornerRadiusBottomRight = 7,
+            BgColor = background,
+            BorderColor = border,
+            BorderWidthLeft = width,
+            BorderWidthTop = width,
+            BorderWidthRight = width,
+            BorderWidthBottom = width,
+            CornerRadiusTopLeft = 6,
+            CornerRadiusTopRight = 6,
+            CornerRadiusBottomLeft = 6,
+            CornerRadiusBottomRight = 6,
         }, rect);
     }
 
-    private static string Clip(string text, int max) => text.Length <= max ? text : text[..(max - 1)] + "…";
+    private static string ClipToWidth(string text, Font font, float width, int fontSize)
+    {
+        if (MeasureText(text, font, fontSize) <= width) return text;
+        const string ellipsis = "…";
+        int low = 0, high = text.Length;
+        while (low < high)
+        {
+            int middle = (low + high + 1) / 2;
+            if (MeasureText(text[..middle] + ellipsis, font, fontSize) <= width) low = middle;
+            else high = middle - 1;
+        }
+        return text[..low] + ellipsis;
+    }
 
+    private sealed record HitArea(Rect2 Rect, string ItemId, string? NodeId, string? MoreBranchesNodeId, string FullText);
 }

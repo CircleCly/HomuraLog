@@ -93,6 +93,28 @@ Assert(fanoutProjection.Children.Any(child => child.Rows.Any(row => row.Node?.Is
 Assert(fanoutProjection.Children.Any(child => child.Rows.Any(row => row.Node?.Action?.SourceId == "CARD_7")),
     "Non-current mini branches must be selected by most recent visit.");
 
+CompactTimelineLayoutResult compactFanout = CompactTimelineLayout.Create(
+    fanoutProjection, _ => 180, _ => 180);
+Assert(compactFanout.CurrentItemId != null, "Compact layout must identify the current action.");
+Assert(compactFanout.Edges.Count > 0, "Compact layout must generate arrows after placing nodes.");
+CompactTimelineItem[] compactItems = compactFanout.Items.ToArray();
+for (int left = 0; left < compactItems.Length; left++)
+for (int right = left + 1; right < compactItems.Length; right++)
+{
+    CompactTimelineItem a = compactItems[left], b = compactItems[right];
+    bool overlaps = a.X < b.X + b.Width && a.X + a.Width > b.X
+        && a.Y < b.Y + b.Height && a.Y + a.Height > b.Y;
+    Assert(!overlaps, $"Compact items must not overlap: {a.Id} and {b.Id}.");
+}
+int fanoutLanes = compactItems.Where(item => !item.IsMoreBranches)
+    .Select(item => MathF.Round(item.X)).Distinct().Count();
+Assert(fanoutLanes <= 3,
+    "A six-way decision must use the center, left, and right lanes instead of six leaf columns.");
+int projectedItems = FlattenMini(fanoutProjection).Sum(segment => segment.Rows.Count
+    + (segment.HiddenBranchCount > 0 ? 1 : 0));
+Assert(compactItems.Length == projectedItems,
+    "Compact layout must preserve every projected action, omission, and hidden-branch prompt.");
+
 var forwardRecord = Record("forward-path");
 var forwardWriter = new TimelineTree(forwardRecord);
 TimelineAction forwardA = new(TimelineActionKind.PlayCard, 1, "A", "1");
@@ -115,3 +137,10 @@ Assert(!forwardCursor.TryGetForwardPath(forwardRecord.Root.NodeId, out _), "An a
 Assert(!forwardCursor.TryGetForwardPath(siblingNode.NodeId, out _), "A sibling is not a forward target.");
 Assert(!forwardCursor.TryGetForwardPath("missing", out _), "A missing node is not a forward target.");
 Console.WriteLine("HomuraLog core checks passed.");
+
+static IEnumerable<MiniTimelineSegment> FlattenMini(MiniTimelineSegment root)
+{
+    yield return root;
+    foreach (MiniTimelineSegment child in root.Children)
+    foreach (MiniTimelineSegment descendant in FlattenMini(child)) yield return descendant;
+}

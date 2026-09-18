@@ -8,7 +8,6 @@ using MegaCrit.Sts2.Core.Nodes.Potions;
 using MegaCrit.Sts2.Core.Nodes.Rooms;
 using MegaCrit.Sts2.Core.Nodes.Screens.ScreenContext;
 using MegaCrit.Sts2.Core.Runs;
-using STS2RitsuLib.Ui.Controls;
 using STS2RitsuLib.Ui.Shell.Theme;
 using STS2RitsuLib.Ui.Windows;
 
@@ -20,17 +19,13 @@ internal sealed partial class HomuraOverlay : CanvasLayer
     private VBoxContainer? _content;
     private Button? _toggle;
     private Label? _status;
-    private Label? _path;
-    private Label? _branches;
     private TimelineMiniGraph? _miniGraph;
-    private Label? _graphHelp;
-    private Godot.Tree? _tree;
+    private PanelContainer? _miniInspector;
     private Label? _details;
     private Button? _miniJump;
     private Button? _fullGraph;
     private Button? _resetMini;
     private TimelineGraphWindow? _graphWindow;
-    private readonly Dictionary<TreeItem, TimelineNodeSnapshot> _treeNodes = [];
     private TimelineSession? _session;
     private TimelineSnapshot? _snapshot;
     private string? _selectedMiniNodeId;
@@ -39,7 +34,7 @@ internal sealed partial class HomuraOverlay : CanvasLayer
     private double _combatWatchdogRefresh;
     private bool _hiddenForPause;
     private bool _hiddenForCombatModal;
-    private Vector2 _expandedSize = new(680, 600);
+    private Vector2 _expandedSize = new(440, 360);
     private string _lastLanguage = "";
 
     public override void _Ready()
@@ -48,9 +43,9 @@ internal sealed partial class HomuraOverlay : CanvasLayer
         _panel = new RitsuFloatingWindow(new RitsuFloatingWindowOptions
         {
             Title = HomuraText.Title,
-            InitialSize = new Vector2(680, 600),
-            MinimumSize = new Vector2(360, 180),
-            MaximumSize = new Vector2(1050, 1000),
+            InitialSize = new Vector2(440, 360),
+            MinimumSize = new Vector2(360, 260),
+            MaximumSize = new Vector2(850, 800),
             FitInitialSizeToContent = false,
             Movable = true,
             Resizable = true,
@@ -61,12 +56,15 @@ internal sealed partial class HomuraOverlay : CanvasLayer
         _panel.AddThemeFontOverride("font", RitsuShellTheme.Current.Font.Body);
         AddChild(_panel);
         _content = new VBoxContainer();
-        _content.AddThemeConstantOverride("separation", 7);
+        _content.AddThemeConstantOverride("separation", 4);
         _panel.SetContent(_content);
 
         HBoxContainer header = new();
         _content.AddChild(header);
-        header.AddChild(new Control { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill });
+        _status = CreateRitsuLabel();
+        _status.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+        _status.TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis;
+        header.AddChild(_status);
         _toggle = new Button { Text = HomuraText.Hide, FocusMode = Control.FocusModeEnum.None };
         _toggle.AddThemeFontOverride("font", RitsuShellTheme.Current.Font.Button);
         _toggle.Pressed += Toggle;
@@ -80,10 +78,6 @@ internal sealed partial class HomuraOverlay : CanvasLayer
         _resetMini.Pressed += () => _miniGraph?.ResetToCurrent();
         header.AddChild(_resetMini);
 
-        _status = CreateRitsuLabel();
-        _path = CreateRitsuLabel();
-        _branches = CreateRitsuLabel();
-        _content.AddChild(_status);
         _miniGraph = new TimelineMiniGraph
         {
             SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
@@ -92,17 +86,61 @@ internal sealed partial class HomuraOverlay : CanvasLayer
         _miniGraph.NodeActivated += ShowNodeDetails;
         _miniGraph.MoreBranchesActivated += ShowFullGraphAt;
         _content.AddChild(_miniGraph);
-        _graphHelp = CreateRitsuLabel();
-        _graphHelp.Text = HomuraText.GraphHelp;
-        _graphHelp.Modulate = new Color(RitsuShellTheme.Current.Text.LabelSecondary, 0.85f);
-        _content.AddChild(_graphHelp);
-        _content.AddChild(RitsuControlFactory.CreateDivider());
+
+        _miniInspector = new PanelContainer
+        {
+            Visible = false,
+            MouseFilter = Control.MouseFilterEnum.Stop,
+            AnchorLeft = 0,
+            AnchorRight = 1,
+            AnchorTop = 1,
+            AnchorBottom = 1,
+            OffsetLeft = 7,
+            OffsetRight = -7,
+            OffsetTop = -122,
+            OffsetBottom = -7,
+        };
+        _miniInspector.AddThemeStyleboxOverride("panel", new StyleBoxFlat
+        {
+            BgColor = new Color(RitsuShellTheme.Current.Surface.Entry.Bg, 0.98f),
+            BorderColor = new Color("71859a"),
+            BorderWidthLeft = 1,
+            BorderWidthTop = 1,
+            BorderWidthRight = 1,
+            BorderWidthBottom = 1,
+            CornerRadiusTopLeft = 7,
+            CornerRadiusTopRight = 7,
+            CornerRadiusBottomLeft = 7,
+            CornerRadiusBottomRight = 7,
+            ContentMarginLeft = 9,
+            ContentMarginRight = 9,
+            ContentMarginTop = 7,
+            ContentMarginBottom = 7,
+        });
+        VBoxContainer inspectorContent = new();
+        inspectorContent.AddThemeConstantOverride("separation", 3);
         _details = CreateRitsuLabel();
-        _content.AddChild(_details);
+        _details.SizeFlagsVertical = Control.SizeFlags.ExpandFill;
+        ScrollContainer detailScroll = new()
+        {
+            SizeFlagsVertical = Control.SizeFlags.ExpandFill,
+            HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled,
+        };
+        detailScroll.AddChild(_details);
+        inspectorContent.AddChild(detailScroll);
+        HBoxContainer inspectorActions = new();
+        inspectorActions.AddChild(new Control { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill });
         _miniJump = new Button { Text = HomuraText.JumpHere, Disabled = true, FocusMode = Control.FocusModeEnum.None };
         _miniJump.AddThemeFontOverride("font", RitsuShellTheme.Current.Font.Button);
         _miniJump.Pressed += RequestMiniWorldlineJump;
-        _content.AddChild(_miniJump);
+        inspectorActions.AddChild(_miniJump);
+        Button closeInspector = new() { Text = "×", FocusMode = Control.FocusModeEnum.None };
+        closeInspector.AddThemeFontOverride("font", RitsuShellTheme.Current.Font.Button);
+        closeInspector.Pressed += () => _miniInspector!.Visible = false;
+        inspectorActions.AddChild(closeInspector);
+        inspectorContent.AddChild(inspectorActions);
+        _miniInspector.AddChild(inspectorContent);
+        _miniGraph.AddChild(_miniInspector);
         RefreshLocalizedChrome();
         Visible = false;
         SetProcess(true);
@@ -135,6 +173,7 @@ internal sealed partial class HomuraOverlay : CanvasLayer
         _session = null;
         _snapshot = null;
         _selectedMiniNodeId = null;
+        if (_miniInspector != null) _miniInspector.Visible = false;
         _graphWindow?.QueueFree();
         _graphWindow = null;
         Visible = false;
@@ -167,17 +206,14 @@ internal sealed partial class HomuraOverlay : CanvasLayer
 
     private void Render()
     {
-        if (_snapshot == null || _status == null || _path == null || _branches == null) return;
+        if (_snapshot == null || _status == null) return;
         _status.Text = HomuraText.Nodes(_snapshot.TotalNodes);
-        _path.Text = HomuraText.Current + ":\n" + (_snapshot.Path.Count == 0
-            ? "  " + HomuraText.Root
-            : string.Join("  →  ", _snapshot.Path.TakeLast(7).Select(ActionText)));
-        _branches.Text = HomuraText.Next + ":\n" + (_snapshot.NextBranches.Count == 0
-            ? "  " + HomuraText.None
-            : string.Join('\n', _snapshot.NextBranches.Take(8).Select(branch =>
-                $"  ✓ {ActionText(branch.Action)} · {HomuraText.Visits(branch.Visits)}{OutcomeText(branch.Outcome)}")));
         _miniGraph?.SetSnapshot(_snapshot);
-        ShowNodeDetails(_snapshot.CurrentNodeId);
+        if (_miniInspector?.Visible == true && _selectedMiniNodeId != null)
+        {
+            if (FindNode(_snapshot.Root, _selectedMiniNodeId) != null) ShowNodeDetails(_selectedMiniNodeId);
+            else _miniInspector.Visible = false;
+        }
     }
 
     private void ShowNodeDetails(string nodeId)
@@ -185,6 +221,7 @@ internal sealed partial class HomuraOverlay : CanvasLayer
         if (_snapshot == null || _details == null) return;
         TimelineNodeSnapshot? node = FindNode(_snapshot.Root, nodeId);
         _selectedMiniNodeId = node?.NodeId;
+        if (_miniInspector != null) _miniInspector.Visible = node != null;
         if (_miniJump != null)
             _miniJump.Disabled = node?.Action == null || node.NodeId == _snapshot.CurrentNodeId;
         if (node == null || node.State == null)
@@ -194,13 +231,13 @@ internal sealed partial class HomuraOverlay : CanvasLayer
         }
         if (node.State.PlayerBlock >= 0)
         {
-            _details.Text = FormatRichDetails(node.State, node.IsCurrent);
+            _details.Text = FormatRichDetails(node.State, node.IsCurrent) + $"\n{HomuraText.Result}: {ResultText(node.Outcome)}";
             return;
         }
         string enemies = string.Join(", ", node.State.Enemies.Select(enemy =>
             $"{enemy.ModelId} {enemy.Hp}/{enemy.MaxHp}" + (enemy.Block > 0 ? $" (+{enemy.Block})" : "")));
         _details.Text = $"{HomuraText.Details}: T{node.State.Turn} · {HomuraText.Hp} {node.State.PlayerHp}/{node.State.PlayerMaxHp} · " +
-            $"{HomuraText.Energy} {node.State.Energy}\n{HomuraText.EnemyHp}: {enemies}";
+            $"{HomuraText.Energy} {node.State.Energy}\n{HomuraText.EnemyHp}: {enemies}\n{HomuraText.Result}: {ResultText(node.Outcome)}";
     }
 
     private static TimelineNodeSnapshot? FindNode(TimelineNodeSnapshot node, string nodeId)
@@ -220,60 +257,6 @@ internal sealed partial class HomuraOverlay : CanvasLayer
         label.AddThemeFontOverride("font", RitsuShellTheme.Current.Font.Body);
         label.AddThemeColorOverride("font_color", RitsuShellTheme.Current.Text.LabelPrimary);
         return label;
-    }
-
-    private void RenderTree()
-    {
-        if (_snapshot == null || _tree == null) return;
-        _tree.Clear();
-        _treeNodes.Clear();
-        TreeItem root = _tree.CreateItem();
-        AddTreeNode(root, _snapshot.Root, isRoot: true);
-        TreeItem? current = _treeNodes.FirstOrDefault(pair => pair.Value.IsCurrent).Key;
-        if (current != null)
-        {
-            current.Select(0);
-            _tree.ScrollToItem(current, true);
-            ShowSelectedDetails();
-        }
-    }
-
-    private void AddTreeNode(TreeItem item, TimelineNodeSnapshot node, bool isRoot = false)
-    {
-        _treeNodes[item] = node;
-        item.SetText(0, isRoot ? $"◎ {HomuraText.Root}" : (node.IsCurrent ? "▶ " : "") + ActionText(node.Action!));
-        item.SetText(1, node.Visits.ToString());
-        item.SetText(2, ResultText(node.Outcome));
-        if (node.IsOnCurrentPath)
-        {
-            Color currentColor = node.IsCurrent ? new Color(1f, 0.75f, 0.3f) : new Color(0.4f, 0.85f, 1f);
-            for (int column = 0; column < 3; column++) item.SetCustomColor(column, currentColor);
-            item.Collapsed = false;
-        }
-        else item.Collapsed = node.Children.Count > 0;
-        foreach (TimelineNodeSnapshot child in node.Children)
-            AddTreeNode(_tree!.CreateItem(item), child);
-    }
-
-    private void ShowSelectedDetails()
-    {
-        if (_tree == null || _details == null) return;
-        TreeItem? selected = _tree.GetSelected();
-        if (selected == null || !_treeNodes.TryGetValue(selected, out TimelineNodeSnapshot? node)) return;
-        if (node.State == null)
-        {
-            _details.Text = HomuraText.Details + ": " + HomuraText.None;
-            return;
-        }
-        if (node.State.PlayerBlock >= 0)
-        {
-            _details.Text = FormatRichDetails(node.State);
-            return;
-        }
-        string enemies = string.Join(", ", node.State.Enemies.Select(enemy =>
-            $"{enemy.ModelId} {enemy.Hp}/{enemy.MaxHp}" + (enemy.Block > 0 ? $" (+{enemy.Block})" : "")));
-        _details.Text = $"{HomuraText.Details}: T{node.State.Turn} · {HomuraText.Hp} {node.State.PlayerHp}/{node.State.PlayerMaxHp} · " +
-            $"{HomuraText.Energy} {node.State.Energy}\n{HomuraText.EnemyHp}: {enemies}";
     }
 
     internal static string ActionText(TimelineAction action) => action.Kind switch
@@ -432,10 +415,10 @@ internal sealed partial class HomuraOverlay : CanvasLayer
     {
         _lastLanguage = HomuraText.Language;
         if (_toggle != null) _toggle.Text = _collapsed ? HomuraText.Show : HomuraText.Hide;
-        if (_fullGraph != null) _fullGraph.Text = HomuraText.FullGraph;
-        if (_resetMini != null) _resetMini.Text = HomuraText.ResetView;
-        if (_graphHelp != null) _graphHelp.Text = HomuraText.GraphHelp;
+        if (_fullGraph != null) _fullGraph.Text = HomuraText.CompactFullGraph;
+        if (_resetMini != null) _resetMini.Text = HomuraText.CompactResetView;
         if (_miniJump != null) _miniJump.Text = HomuraText.JumpHere;
+        _miniGraph?.RefreshLocalization();
         try
         {
             var field = typeof(RitsuFloatingWindow).GetField("_title",
@@ -459,25 +442,20 @@ internal sealed partial class HomuraOverlay : CanvasLayer
 
     private void ApplyCompactState()
     {
-        if (_content == null || _toggle == null || _panel == null || _status == null || _path == null
-            || _branches == null || _miniGraph == null || _details == null || _miniJump == null || _fullGraph == null || _resetMini == null) return;
-        _status!.Visible = !_collapsed;
-        _path!.Visible = !_collapsed;
-        _branches!.Visible = !_collapsed;
-        _miniGraph!.Visible = !_collapsed;
-        if (_graphHelp != null) _graphHelp.Visible = !_collapsed;
-        _details!.Visible = !_collapsed;
-        _miniJump!.Visible = !_collapsed;
+        if (_content == null || _toggle == null || _panel == null || _status == null
+            || _miniGraph == null || _fullGraph == null || _resetMini == null) return;
+        _status.Visible = !_collapsed;
+        _miniGraph.Visible = !_collapsed;
         if (_collapsed)
         {
             if (_panel.Size.X > 300 || _panel.Size.Y > 100) _expandedSize = _panel.Size;
-            _panel.CustomMinimumSize = new Vector2(220, 54);
-            _panel.Size = new Vector2(220, 54);
+            _panel.CustomMinimumSize = new Vector2(300, 54);
+            _panel.Size = new Vector2(300, 54);
         }
         else
         {
-            _panel.CustomMinimumSize = new Vector2(640, 540);
-            _panel.Size = new Vector2(Math.Max(640, _expandedSize.X), Math.Max(540, _expandedSize.Y));
+            _panel.CustomMinimumSize = new Vector2(360, 260);
+            _panel.Size = new Vector2(Math.Max(360, _expandedSize.X), Math.Max(260, _expandedSize.Y));
         }
         // The fullscreen graph remains reachable even in compact mode; otherwise a
         // compact HUD can trap the user in a view with no way to inspect the tree.

@@ -36,6 +36,8 @@ internal static class HomuraText
     public static string Choice => Chinese ? "选择" : "Choice";
     public static string FullGraph => Chinese ? "全屏世界线" : "Fullscreen graph";
     public static string ResetView => Chinese ? "重置视图" : "Reset view";
+    public static string CompactFullGraph => Chinese ? "全屏" : "Full";
+    public static string CompactResetView => Chinese ? "重置" : "Reset";
     public static string Fullscreen => Chinese ? "全屏" : "Fullscreen";
     public static string ExitFullscreen => Chinese ? "退出全屏" : "Exit fullscreen";
     public static string JumpHere => Chinese ? "跳到此世界线" : "Jump to this timeline";

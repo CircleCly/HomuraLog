@@ -362,6 +362,7 @@ internal sealed partial class TimelineMiniGraph : Control
             else if (_selectedBranchIndex >= _branchWindowStart + MiniTimelineProjector.VisibleBranchCount)
                 _branchWindowStart = _selectedBranchIndex - MiniTimelineProjector.VisibleBranchCount + 1;
             _layout = null;
+            _zoom = CalculateReadableZoom();
             CenterCurrent();
             QueueRedraw();
             return;
@@ -440,7 +441,9 @@ internal sealed partial class TimelineMiniGraph : Control
         if (_snapshot == null || Size.X <= 0) return 0.9f;
         _layout = BuildLayout();
         Rect2 focus = FocusBounds(_layout);
-        float fitWidth = (Size.X - 16) / Math.Max(1, focus.Size.X);
+        float left = _layout.Items.Min(item => item.X);
+        float right = _layout.Items.Max(item => item.X + item.Width);
+        float fitWidth = (Size.X - 16) / Math.Max(1, right - left + 12);
         float fitHeight = (Size.Y - 16) / Math.Max(1, focus.Size.Y);
         return Math.Clamp(Math.Min(fitWidth, fitHeight), MinReadableZoom, 1f);
     }

@@ -1,5 +1,7 @@
 param(
-    [int]$TimeoutSeconds = 90
+    [int]$TimeoutSeconds = 90,
+    [int]$Width = 0,
+    [int]$Height = 0
 )
 
 $ErrorActionPreference = 'Stop'
@@ -21,9 +23,15 @@ finally {
     Pop-Location
 }
 
+$arguments = @('--enable-mods', '--homuralog-visual-smoke')
+if ($Width -gt 0 -or $Height -gt 0) {
+    if ($Width -lt 640 -or $Height -lt 360) { throw 'Width and Height must both specify a usable viewport.' }
+    $arguments += "--homuralog-visual-size=${Width}x${Height}"
+}
+
 $startedAt = Get-Date
 Start-Process -FilePath $gameExecutable `
-    -ArgumentList '--enable-mods', '--homuralog-visual-smoke' `
+    -ArgumentList $arguments `
     -WorkingDirectory $gameDirectory
 
 $deadline = $startedAt.AddSeconds($TimeoutSeconds)

@@ -399,6 +399,16 @@ internal sealed partial class HomuraOverlay : CanvasLayer
         await WaitForUiFrames(4);
         if (_snapshot == null) return;
         await WaitForStableCombat();
+        Vector2I requestedSize = RequestedVisualSmokeSize();
+        if (requestedSize.X > 0)
+        {
+            Window window = GetWindow();
+            window.Mode = Window.ModeEnum.Windowed;
+            await WaitForUiFrames(2);
+            window.Size = requestedSize;
+            await WaitForUiFrames(4);
+            Entry.Logger.Info($"Visual smoke requested live window size={requestedSize} actual={window.Size} viewport={GetViewport().GetVisibleRect().Size}.");
+        }
         string outputDirectory = Path.Combine(OS.GetUserDataDir(), "HomuraLog", "visual-smoke",
             DateTimeOffset.Now.ToString("yyyyMMdd-HHmmss"));
         Directory.CreateDirectory(outputDirectory);
@@ -451,6 +461,18 @@ internal sealed partial class HomuraOverlay : CanvasLayer
         await WaitForUiFrames(2);
         await CaptureViewport(outputDirectory, "08-mini-reset-current.png");
         Entry.Logger.Info($"Visual smoke check captured screenshots directory={outputDirectory}.");
+    }
+
+    private static Vector2I RequestedVisualSmokeSize()
+    {
+        const string prefix = "--homuralog-visual-size=";
+        string? value = System.Environment.GetCommandLineArgs()
+            .FirstOrDefault(argument => argument.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
+        if (value == null) return Vector2I.Zero;
+        string[] parts = value[prefix.Length..].Split('x', 'X');
+        return parts.Length == 2 && int.TryParse(parts[0], out int width)
+            && int.TryParse(parts[1], out int height) && width >= 640 && height >= 360
+            ? new Vector2I(width, height) : Vector2I.Zero;
     }
 
     private async Task WaitForUiFrames(int count)

@@ -4,6 +4,8 @@ Run `powershell -NoProfile -ExecutionPolicy Bypass -File tools/run-visual-smoke.
 
 For a real English-localization pass, run `powershell -NoProfile -ExecutionPolicy Bypass -File tools/run-visual-language.ps1 -Language eng`. This wrapper selects the most recently used Steam `settings.save`, copies it byte-for-byte to a unique temporary backup, changes only its language property, runs the screenshot suite, stops the game, restores the original bytes in `finally`, and verifies the restored SHA-256 hash. It refuses to run while the game is already open.
 
+For a real window-size pass, run `powershell -NoProfile -ExecutionPolicy Bypass -File tools/run-visual-resolution.ps1 -Width 1600 -Height 900`. The visual hook changes the live Godot window after game startup because both the game's persisted fullscreen setting and ordinary command-line `--resolution` can be overridden. The wrapper still backs up and restores `settings.save` byte-for-byte in case the game observes the temporary resize.
+
 Screenshots are written under `%APPDATA%\SlayTheSpire2\HomuraLog\visual-smoke\<timestamp>`:
 
 1. compact view focused on the player's current node;

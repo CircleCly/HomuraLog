@@ -93,8 +93,16 @@ Assert(fanoutProjection.Children.Any(child => child.Rows.Any(row => row.Node?.Is
 Assert(fanoutProjection.Children.Any(child => child.Rows.Any(row => row.Node?.Action?.SourceId == "CARD_7")),
     "Non-current mini branches must be selected by most recent visit.");
 MiniTimelineSegment currentDecisionProjection = MiniTimelineProjector.Create(new TimelineTree(fanoutRecord).Snapshot());
-Assert(currentDecisionProjection.Children.Count == 8 && currentDecisionProjection.HiddenBranchCount == 0,
-    "The current decision must expose every immediate next branch even when it exceeds the normal branch cap.");
+Assert(currentDecisionProjection.Children.Count == 6 && currentDecisionProjection.HiddenBranchCount == 2,
+    "The current decision must retain the six-branch cap.");
+string hiddenBranchId = fanoutRecord.Root.Children[fanoutActions[0].Key].NodeId;
+MiniTimelineSegment preferredBranchProjection = MiniTimelineProjector.Create(
+    new TimelineTree(fanoutRecord).Snapshot(), hiddenBranchId);
+Assert(preferredBranchProjection.Children.Count == 6
+    && preferredBranchProjection.HiddenBranchCount == 2
+    && preferredBranchProjection.Children.Any(child =>
+        child.Rows.Any(row => row.Node?.NodeId == hiddenBranchId)),
+    "Selecting a hidden immediate branch must swap it into the capped projection.");
 
 CompactTimelineLayoutResult compactFanout = CompactTimelineLayout.Create(
     fanoutProjection, _ => 180, _ => 180);
@@ -118,7 +126,7 @@ int projectedItems = FlattenMini(fanoutProjection).Sum(segment => segment.Rows.C
 Assert(compactItems.Length == projectedItems,
     "Compact layout must preserve every projected action, omission, and hidden-branch prompt.");
 CompactTimelineLayoutResult variableHeightLayout = CompactTimelineLayout.Create(
-    currentDecisionProjection, _ => 160, _ => 160,
+    preferredBranchProjection, _ => 160, _ => 160,
     row => row.Node?.Action == null ? CompactTimelineLayout.ItemHeight : 72);
 Assert(variableHeightLayout.Items.Where(item => item.Row?.Node?.Action != null)
         .All(item => item.Height == 72),

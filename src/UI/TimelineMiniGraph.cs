@@ -16,6 +16,7 @@ internal sealed partial class TimelineMiniGraph : Control
     private TimelineSnapshot? _snapshot;
     private CompactTimelineLayoutResult? _layout;
     private string? _selectedNodeId;
+    private string? _preferredNextNodeId;
     private string? _lastCurrentNodeId;
     private string? _hoveredItemId;
     private Vector2 _hoverPosition;
@@ -63,6 +64,9 @@ internal sealed partial class TimelineMiniGraph : Control
         }
         if (currentChanged || _selectedNodeId == null || Find(snapshot.Root, _selectedNodeId) == null)
             _selectedNodeId = snapshot.CurrentNodeId;
+        if (currentChanged || _preferredNextNodeId != null
+            && Find(snapshot.Root, _preferredNextNodeId) == null)
+            _preferredNextNodeId = null;
         if (currentChanged) Callable.From(ResetToCurrent).CallDeferred();
         QueueRedraw();
     }
@@ -129,12 +133,13 @@ internal sealed partial class TimelineMiniGraph : Control
             DrawEdge(byId[edge.FromItemId], byId[edge.ToItemId], edge.IsCurrentPath);
         foreach (CompactTimelineItem item in _layout.Items) DrawItem(item, theme);
         DrawSetTransform(Vector2.Zero, 0, Vector2.One);
+        DrawBranchNavigator(theme);
         DrawHoverTooltip(theme);
     }
 
     private CompactTimelineLayoutResult BuildLayout()
     {
-        MiniTimelineSegment root = MiniTimelineProjector.Create(_snapshot!);
+        MiniTimelineSegment root = MiniTimelineProjector.Create(_snapshot!, _preferredNextNodeId);
         Font font = RitsuShellTheme.Current.Font.Body;
         Font bold = RitsuShellTheme.Current.Font.BodyBold;
         TimelineNodeSnapshot? current = Find(_snapshot!.Root, _snapshot.CurrentNodeId);
@@ -191,7 +196,7 @@ internal sealed partial class TimelineMiniGraph : Control
         }
 
         TimelineNodeSnapshot node = row.Node!;
-        bool selected = node.NodeId == _selectedNodeId;
+        bool selected = node.NodeId == _selectedNodeId || node.NodeId == _preferredNextNodeId;
         Color accent = node.IsCurrent ? new Color("f4b860")
             : node.Outcome == TimelineOutcome.Victory ? new Color("62d69b")
             : node.Outcome == TimelineOutcome.Defeat ? new Color("e96b70")
@@ -257,6 +262,12 @@ internal sealed partial class TimelineMiniGraph : Control
 
     private void ActivateAt(Vector2 screenPosition)
     {
+        BranchButton? branchButton = BranchButtons().FirstOrDefault(button => button.Rect.HasPoint(screenPosition));
+        if (branchButton != null)
+        {
+            SelectAdjacentBranch(branchButton.Delta);
+            return;
+        }
         Vector2 world = (screenPosition - _pan) / _zoom;
         HitArea? area = _hitAreas.LastOrDefault(candidate => candidate.Rect.HasPoint(world));
         if (area == null) return;
@@ -267,6 +278,59 @@ internal sealed partial class TimelineMiniGraph : Control
         }
         else if (area.MoreBranchesNodeId != null)
             MoreBranchesActivated?.Invoke(area.MoreBranchesNodeId);
+        QueueRedraw();
+    }
+
+    private void DrawBranchNavigator(RitsuShellTheme theme)
+    {
+        IReadOnlyList<TimelineNodeSnapshot> branches = CurrentBranches();
+        if (branches.Count <= 1) return;
+        foreach (BranchButton button in BranchButtons())
+        {
+            DrawCard(button.Rect, new Color(theme.Surface.Entry.Bg, 0.98f), new Color("70b7ed"), 1.5f);
+            DrawString(theme.Font.BodyBold, button.Rect.Position + new Vector2(0, 20), button.Label,
+                HorizontalAlignment.Center, button.Rect.Size.X, 16, theme.Text.LabelPrimary);
+        }
+        int index = Math.Max(0, branches.ToList().FindIndex(branch =>
+            branch.NodeId == (_preferredNextNodeId ?? _selectedNodeId)));
+        string position = $"{index + 1}/{branches.Count}";
+        Rect2 label = new(Size.X - 75, 37, 67, 22);
+        DrawString(theme.Font.BodyBold, label.Position + new Vector2(0, 17), position,
+            HorizontalAlignment.Center, label.Size.X, 13, theme.Text.LabelSecondary);
+    }
+
+    private IReadOnlyList<BranchButton> BranchButtons()
+    {
+        float x = Size.X - 69;
+        return
+        [
+            new BranchButton(new Rect2(x, 7, 28, 28), "←", -1),
+            new BranchButton(new Rect2(x + 34, 7, 28, 28), "→", 1),
+            new BranchButton(new Rect2(x, 61, 28, 28), "↑", -1),
+            new BranchButton(new Rect2(x + 34, 61, 28, 28), "↓", 1),
+        ];
+    }
+
+    private IReadOnlyList<TimelineNodeSnapshot> CurrentBranches()
+    {
+        TimelineNodeSnapshot? current = _snapshot == null ? null : Find(_snapshot.Root, _snapshot.CurrentNodeId);
+        return current?.Children.OrderByDescending(child => child.LastVisitedAt).ToArray()
+            ?? Array.Empty<TimelineNodeSnapshot>();
+    }
+
+    private void SelectAdjacentBranch(int delta)
+    {
+        IReadOnlyList<TimelineNodeSnapshot> branches = CurrentBranches();
+        if (branches.Count <= 1) return;
+        int index = branches.ToList().FindIndex(branch =>
+            branch.NodeId == (_preferredNextNodeId ?? _selectedNodeId));
+        if (index < 0) index = delta > 0 ? -1 : 0;
+        index = (index + delta + branches.Count) % branches.Count;
+        _preferredNextNodeId = branches[index].NodeId;
+        _selectedNodeId = _preferredNextNodeId;
+        _layout = null;
+        ResetToCurrent();
+        NodeActivated?.Invoke(_selectedNodeId);
         QueueRedraw();
     }
 
@@ -398,4 +462,5 @@ internal sealed partial class TimelineMiniGraph : Control
     }
 
     private sealed record HitArea(Rect2 Rect, string ItemId, string? NodeId, string? MoreBranchesNodeId, string FullText);
+    private sealed record BranchButton(Rect2 Rect, string Label, int Delta);
 }

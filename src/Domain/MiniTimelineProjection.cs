@@ -20,7 +20,7 @@ public static class MiniTimelineProjector
     private const int ActionsBeforeCurrent = 3;
     private const int ActionsAfterCurrent = 2;
 
-    public static MiniTimelineSegment Create(TimelineSnapshot snapshot)
+    public static MiniTimelineSegment Create(TimelineSnapshot snapshot, string? preferredNextNodeId = null)
     {
         RawSegment root = BuildSegments(snapshot.Root, null);
         RawSegment current = Flatten(root).First(segment =>
@@ -34,26 +34,34 @@ public static class MiniTimelineProjector
             .ToHashSet(StringComparer.Ordinal);
         int earlierActions = path.Take(startIndex)
             .Sum(segment => segment.Nodes.Count(node => node.Action != null));
-        return Project(start, current.Id, mainPath, DescendantDecisions, earlierActions);
+        return Project(start, current.Id, mainPath, DescendantDecisions, earlierActions,
+            preferredNextNodeId);
     }
 
     private static MiniTimelineSegment Project(RawSegment segment, string currentId,
-        HashSet<string> mainPath, int descendantDepth, int earlierActions = 0)
+        HashSet<string> mainPath, int descendantDepth, int earlierActions = 0,
+        string? preferredNextNodeId = null)
     {
         bool isCurrent = segment.Id == currentId;
-        bool currentAtDecision = segment.Nodes[^1].IsCurrent;
         RawSegment? pathChild = segment.Children.FirstOrDefault(child => mainPath.Contains(child.Id));
-        IEnumerable<RawSegment> ordered = segment.Children
+        RawSegment[] ordered = segment.Children
             .OrderByDescending(child => ReferenceEquals(child, pathChild))
-            .ThenByDescending(child => child.Nodes.Max(node => node.LastVisitedAt));
-        RawSegment[] selected = (currentAtDecision ? ordered : ordered.Take(BranchCap)).ToArray();
+            .ThenByDescending(child => child.Nodes.Max(node => node.LastVisitedAt)).ToArray();
+        RawSegment[] selected = ordered.Take(BranchCap).ToArray();
+        if (isCurrent && preferredNextNodeId != null)
+        {
+            RawSegment? preferred = ordered.FirstOrDefault(child =>
+                child.Nodes[0].NodeId == preferredNextNodeId);
+            if (preferred != null && !selected.Contains(preferred))
+                selected[^1] = preferred;
+        }
         int hidden = Math.Max(0, segment.Children.Count - selected.Length);
         List<MiniTimelineSegment> children = [];
         foreach (RawSegment child in selected)
         {
             bool continuesToCurrent = mainPath.Contains(child.Id);
             children.Add(continuesToCurrent
-                ? Project(child, currentId, mainPath, descendantDepth)
+                ? Project(child, currentId, mainPath, descendantDepth, preferredNextNodeId: preferredNextNodeId)
                 : ProjectPreview(child, isCurrent ? descendantDepth : 1));
         }
         return new MiniTimelineSegment(segment.Id,

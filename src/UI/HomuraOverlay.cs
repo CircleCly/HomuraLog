@@ -23,6 +23,7 @@ internal sealed partial class HomuraOverlay : CanvasLayer
     private Label? _path;
     private Label? _branches;
     private TimelineMiniGraph? _miniGraph;
+    private Label? _graphHelp;
     private Godot.Tree? _tree;
     private Label? _details;
     private Button? _miniJump;
@@ -91,6 +92,10 @@ internal sealed partial class HomuraOverlay : CanvasLayer
         _miniGraph.NodeActivated += ShowNodeDetails;
         _miniGraph.MoreBranchesActivated += ShowFullGraphAt;
         _content.AddChild(_miniGraph);
+        _graphHelp = CreateRitsuLabel();
+        _graphHelp.Text = HomuraText.GraphHelp;
+        _graphHelp.Modulate = new Color(RitsuShellTheme.Current.Text.LabelSecondary, 0.85f);
+        _content.AddChild(_graphHelp);
         _content.AddChild(RitsuControlFactory.CreateDivider());
         _details = CreateRitsuLabel();
         _content.AddChild(_details);
@@ -429,6 +434,7 @@ internal sealed partial class HomuraOverlay : CanvasLayer
         if (_toggle != null) _toggle.Text = _collapsed ? HomuraText.Show : HomuraText.Hide;
         if (_fullGraph != null) _fullGraph.Text = HomuraText.FullGraph;
         if (_resetMini != null) _resetMini.Text = HomuraText.ResetView;
+        if (_graphHelp != null) _graphHelp.Text = HomuraText.GraphHelp;
         if (_miniJump != null) _miniJump.Text = HomuraText.JumpHere;
         try
         {
@@ -459,6 +465,7 @@ internal sealed partial class HomuraOverlay : CanvasLayer
         _path!.Visible = !_collapsed;
         _branches!.Visible = !_collapsed;
         _miniGraph!.Visible = !_collapsed;
+        if (_graphHelp != null) _graphHelp.Visible = !_collapsed;
         _details!.Visible = !_collapsed;
         _miniJump!.Visible = !_collapsed;
         if (_collapsed)

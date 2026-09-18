@@ -18,6 +18,7 @@ internal sealed partial class TimelineMiniGraph : Control
     private float _zoom = 0.9f;
     private bool _panning;
     private bool _dragged;
+    private float _dragDistance;
 
     public TimelineMiniGraph()
     {
@@ -67,6 +68,7 @@ internal sealed partial class TimelineMiniGraph : Control
             {
                 _panning = true;
                 _dragged = false;
+                _dragDistance = 0;
             }
             else
             {
@@ -80,7 +82,8 @@ internal sealed partial class TimelineMiniGraph : Control
                         _selectedNodeId = _hitAreas[index].NodeId;
                         NodeActivated?.Invoke(_selectedNodeId);
                         QueueRedraw();
-                        break;
+                        AcceptEvent();
+                        return;
                     }
                     for (int index = _moreBranchHitAreas.Count - 1; index >= 0; index--)
                     {
@@ -94,7 +97,8 @@ internal sealed partial class TimelineMiniGraph : Control
         }
         else if (inputEvent is InputEventMouseMotion motion && _panning)
         {
-            if (motion.Relative.LengthSquared() > 0.5f) _dragged = true;
+            _dragDistance += motion.Relative.Length();
+            if (_dragDistance >= 6f) _dragged = true;
             _pan += motion.Relative;
             QueueRedraw();
             AcceptEvent();
@@ -130,8 +134,6 @@ internal sealed partial class TimelineMiniGraph : Control
         foreach (MiniTimelineSegment segment in segments) DrawSegment(segment, positions[segment.Id], theme);
         DrawSetTransform(Vector2.Zero, 0, Vector2.One);
 
-        DrawString(theme.Font.Body, new Vector2(12, Size.Y - 10), HomuraText.GraphHelp,
-            HorizontalAlignment.Left, Size.X - 24, 12, new Color(theme.Text.LabelSecondary, 0.85f));
     }
 
     private void DrawSegment(MiniTimelineSegment segment, Vector2 position, RitsuShellTheme theme)

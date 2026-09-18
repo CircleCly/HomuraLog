@@ -31,6 +31,16 @@ var thirdAttempt = new TimelineTree(record);
 thirdAttempt.Append(strikeA, state, DateTimeOffset.UtcNow);
 Assert(record.Root.Children[strikeA.Key].VisitCount == 2, "Revisiting an action must increment its visit count.");
 
+var deleteRecord = Record("delete-subtree");
+var deleteTree = new TimelineTree(deleteRecord);
+TimelineNode deleteParent = deleteTree.Append(strikeA, state, DateTimeOffset.UtcNow);
+deleteTree.Append(new TimelineAction(TimelineActionKind.EndTurn, 1, "END_TURN"), state, DateTimeOffset.UtcNow);
+Assert(deleteTree.Remove(deleteParent.NodeId), "Deleting a node must remove the action-keyed child entry.");
+Assert(deleteRecord.Root.Children.Count == 0, "Deleting a node must remove its entire subtree.");
+Assert(deleteTree.Current.NodeId == deleteRecord.Root.NodeId,
+    "Deleting a node on the current path must move the timeline cursor to its surviving parent.");
+Assert(!deleteTree.Remove(deleteRecord.Root.NodeId), "The timeline root must remain undeletable.");
+
 TimelineAction choice = new(TimelineActionKind.CardChoice, 1, "DISCOVERY", Choices: ["BASH#0", "DEFEND#1"]);
 Assert(choice.Key != (choice with { Choices = ["DEFEND#1", "BASH#0"] }).Key, "Choice order is part of a worldline.");
 

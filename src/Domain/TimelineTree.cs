@@ -90,7 +90,9 @@ public sealed class TimelineTree
         if (nodeId == _record.Root.NodeId) return false;
         TimelineNode? parent = FindParent(_record.Root, nodeId);
         if (parent == null) return false;
-        bool removed = parent.Children.Remove(nodeId);
+        string? actionKey = parent.Children.FirstOrDefault(pair => pair.Value.NodeId == nodeId).Key;
+        if (actionKey == null) return false;
+        bool removed = parent.Children.Remove(actionKey);
         if (removed)
         {
             int index = _path.FindIndex(node => node.NodeId == nodeId);

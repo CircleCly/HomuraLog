@@ -8,5 +8,6 @@
   <ItemGroup>
     <Compile Include="../../src/Domain/*.cs" Link="Domain/%(Filename)%(Extension)" />
     <Compile Include="../../src/Persistence/TimelineStore.cs" Link="Persistence/TimelineStore.cs" />
+    <Compile Include="../../src/Persistence/UiLayoutStore.cs" Link="Persistence/UiLayoutStore.cs" />
   </ItemGroup>
 </Project>

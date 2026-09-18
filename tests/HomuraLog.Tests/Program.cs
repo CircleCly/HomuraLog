@@ -132,6 +132,15 @@ Assert(clampedWindow.X >= LargeWindowGeometry.Margin && clampedWindow.Y >= Large
     && clampedWindow.X + clampedWindow.Width <= 1920 - LargeWindowGeometry.Margin
     && clampedWindow.Y + clampedWindow.Height <= 1080 - LargeWindowGeometry.Margin,
     "Viewport changes must clamp a manually adjusted large window back on screen.");
+string layoutPath = Path.Combine(directory, "ui-layout-v1.json");
+var layoutStore = new UiLayoutStore(layoutPath);
+layoutStore.Save(new LargeWindowBounds(140, 95, 1180, 690), 1920, 1080);
+SavedLargeWindowLayout savedLayout = layoutStore.Load()
+    ?? throw new InvalidOperationException("Saved UI layout must round-trip.");
+Assert(savedLayout.X == 140 && savedLayout.Y == 95
+    && savedLayout.Width == 1180 && savedLayout.Height == 690
+    && savedLayout.ViewportWidth == 1920 && savedLayout.ViewportHeight == 1080,
+    "The manually adjusted large-window position and size must persist exactly.");
 
 var forwardRecord = Record("forward-path");
 var forwardWriter = new TimelineTree(forwardRecord);

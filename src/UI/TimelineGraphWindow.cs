@@ -1,5 +1,6 @@
 using Godot;
 using HomuraLog.Domain;
+using HomuraLog.Persistence;
 using HomuraLog.Runtime;
 using STS2RitsuLib.Ui.Shell.Theme;
 using STS2RitsuLib.Ui.Windows;
@@ -11,6 +12,7 @@ internal sealed partial class TimelineGraphWindow : CanvasLayer
     private const int MaxRenderedNodes = 600;
     private const float WindowOpacity = 0.82f;
     private readonly RitsuFloatingWindow _window;
+    private readonly UiLayoutStore _layoutStore;
     private readonly GraphEdit _graph;
     private readonly ArrowOverlay _arrows;
     private readonly Label _hint;
@@ -27,10 +29,14 @@ internal sealed partial class TimelineGraphWindow : CanvasLayer
     private bool _panning;
     private bool _closedNotified;
     private Viewport? _viewport;
+    private bool _applyingBounds;
+    private bool _layoutDirty;
+    private ulong _layoutSaveAt;
 
     public TimelineGraphWindow(TimelineSnapshot snapshot)
     {
         _snapshot = snapshot;
+        _layoutStore = new UiLayoutStore(Path.Combine(OS.GetUserDataDir(), "HomuraLog", "ui-layout-v1.json"));
         Layer = 110;
         _window = new RitsuFloatingWindow(new RitsuFloatingWindowOptions
         {
@@ -48,6 +54,7 @@ internal sealed partial class TimelineGraphWindow : CanvasLayer
         _window.Modulate = new Color(1f, 1f, 1f, WindowOpacity);
         _window.Closed += (_, _) =>
         {
+            FlushLayout();
             NotifyClosed();
             QueueFree();
         };
@@ -132,12 +139,22 @@ internal sealed partial class TimelineGraphWindow : CanvasLayer
     {
         _viewport = GetViewport();
         _viewport.SizeChanged += ClampToViewport;
+        _window.ItemRectChanged += OnWindowRectChanged;
         ApplyDefaultLargeBounds();
+        SetProcess(true);
         Render();
+    }
+
+    public override void _Process(double delta)
+    {
+        if (_layoutDirty && Time.GetTicksMsec() >= _layoutSaveAt) FlushLayout();
     }
 
     public override void _ExitTree()
     {
+        FlushLayout();
+        if (GodotObject.IsInstanceValid(_window))
+            _window.ItemRectChanged -= OnWindowRectChanged;
         if (_viewport != null && GodotObject.IsInstanceValid(_viewport))
             _viewport.SizeChanged -= ClampToViewport;
         NotifyClosed();
@@ -227,9 +244,15 @@ internal sealed partial class TimelineGraphWindow : CanvasLayer
     private void ApplyDefaultLargeBounds()
     {
         Vector2 viewport = GetViewport().GetVisibleRect().Size;
-        LargeWindowBounds bounds = LargeWindowGeometry.Default(viewport.X, viewport.Y);
-        _window.Position = new Vector2(bounds.X, bounds.Y);
-        _window.Size = new Vector2(bounds.Width, bounds.Height);
+        SavedLargeWindowLayout? saved = _layoutStore.Load();
+        LargeWindowBounds bounds = saved == null
+            ? LargeWindowGeometry.Default(viewport.X, viewport.Y)
+            : LargeWindowGeometry.Clamp(viewport.X, viewport.Y,
+                saved.X, saved.Y, saved.Width, saved.Height);
+        ApplyBounds(bounds);
+        Entry.Logger.Info(saved == null
+            ? $"Large timeline window using responsive default bounds={bounds}."
+            : $"Large timeline window restored saved bounds={bounds} savedViewport={saved.ViewportWidth}x{saved.ViewportHeight}.");
     }
 
     private void ClampToViewport()
@@ -237,8 +260,43 @@ internal sealed partial class TimelineGraphWindow : CanvasLayer
         Vector2 viewport = GetViewport().GetVisibleRect().Size;
         LargeWindowBounds bounds = LargeWindowGeometry.Clamp(viewport.X, viewport.Y,
             _window.Position.X, _window.Position.Y, _window.Size.X, _window.Size.Y);
-        _window.Position = new Vector2(bounds.X, bounds.Y);
-        _window.Size = new Vector2(bounds.Width, bounds.Height);
+        ApplyBounds(bounds);
+    }
+
+    private void ApplyBounds(LargeWindowBounds bounds)
+    {
+        _applyingBounds = true;
+        try
+        {
+            _window.Position = new Vector2(bounds.X, bounds.Y);
+            _window.Size = new Vector2(bounds.Width, bounds.Height);
+        }
+        finally { _applyingBounds = false; }
+    }
+
+    private void OnWindowRectChanged()
+    {
+        if (_applyingBounds || !IsInsideTree()) return;
+        _layoutDirty = true;
+        _layoutSaveAt = Time.GetTicksMsec() + 500;
+    }
+
+    private void FlushLayout()
+    {
+        if (!_layoutDirty || !GodotObject.IsInstanceValid(_window)) return;
+        _layoutDirty = false;
+        try
+        {
+            Vector2 viewport = GetViewport().GetVisibleRect().Size;
+            LargeWindowBounds bounds = LargeWindowGeometry.Clamp(viewport.X, viewport.Y,
+                _window.Position.X, _window.Position.Y, _window.Size.X, _window.Size.Y);
+            _layoutStore.Save(bounds, viewport.X, viewport.Y);
+            Entry.Logger.Info($"Saved large timeline window bounds={bounds} viewport={viewport}.");
+        }
+        catch (Exception error)
+        {
+            Entry.Logger.Warn($"Could not save large timeline window layout: {error.Message}");
+        }
     }
 
     private void NotifyClosed()

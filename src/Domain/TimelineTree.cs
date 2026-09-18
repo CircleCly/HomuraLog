@@ -51,6 +51,12 @@ public sealed class TimelineTree
         return true;
     }
 
+    public void RefreshCurrentState(CombatStateSummary state, DateTimeOffset now)
+    {
+        Current.State = state;
+        Current.LastVisitedAt = now;
+    }
+
     public void MarkCurrent(TimelineOutcome outcome, DateTimeOffset now)
     {
         Current.Outcome = outcome;

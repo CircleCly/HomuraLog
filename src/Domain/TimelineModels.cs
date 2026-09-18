@@ -25,7 +25,14 @@ public sealed record TimelineAction(
 }
 
 public sealed record CreatureState(uint? CombatId, string ModelId, int Hp, int MaxHp, int Block, bool Alive,
-    string Intent = "");
+    string Intent = "", IReadOnlyList<IntentState>? Intents = null);
+
+public sealed record IntentState(
+    string TitleKey,
+    string LabelKey,
+    IReadOnlyList<IntentVariable>? Variables = null);
+
+public sealed record IntentVariable(string Name, string Value, string Kind);
 
 public sealed record CombatStateSummary(
     int Turn,

@@ -236,7 +236,7 @@ internal sealed partial class TimelineGraphWindow : CanvasLayer
             $"{HomuraText.Block} {node.State.PlayerBlock}\n{HomuraText.Energy} {node.State.Energy}\n{HomuraText.EnemyHp}\n" +
             string.Join('\n', node.State.Enemies.Select(enemy =>
                 $"  {enemy.ModelId}: {enemy.Hp}/{enemy.MaxHp}" + (enemy.Block > 0 ? $" +{enemy.Block}" : "")
-                + (string.IsNullOrWhiteSpace(DisplayIntent(enemy.Intent)) ? "" : $" · {HomuraText.Intent}: {DisplayIntent(enemy.Intent)}")));
+                + (string.IsNullOrWhiteSpace(LocalizedIntent.Format(enemy)) ? "" : $" · {HomuraText.Intent}: {LocalizedIntent.Format(enemy)}")));
         _details.Text = $"{action}\n\n{HomuraText.Visits(node.Visits)}\n{node.Outcome}\n\n{state}";
     }
 
@@ -372,15 +372,6 @@ internal sealed partial class TimelineGraphWindow : CanvasLayer
         if (node.State == null) return "";
         int enemyHp = node.State.Enemies.Where(enemy => enemy.Alive).Sum(enemy => enemy.Hp);
         return $"  ·  ♥ {node.State.PlayerHp}  ⚡ {node.State.Energy}  ·  {HomuraText.EnemyHp} {enemyHp}";
-    }
-
-    private static string DisplayIntent(string value)
-    {
-        // Older records stored rendered text in the language active at capture time.
-        // Avoid presenting that stale language in an English UI; current-node details
-        // are refreshed from the live combat state by the compact overlay.
-        if (!HomuraText.Chinese && value.Any(character => character > 127)) return "";
-        return value;
     }
 
     private static string ResultBadge(TimelineOutcome outcome) => outcome switch

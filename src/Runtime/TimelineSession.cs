@@ -98,6 +98,8 @@ internal sealed class TimelineSession : IDisposable
                 throw new InvalidOperationException($"Recorded replay choice is not a child of the replayed action: {choice.SourceId}.");
         }
         _replayChoices.Clear();
+        _tree.RefreshCurrentState(CombatIdentityBuilder.State(_combat), DateTimeOffset.UtcNow);
+        Save();
         NotifyChanged();
     }
 
@@ -131,6 +133,7 @@ internal sealed class TimelineSession : IDisposable
             record.LastOpenedAt = now;
             record.Root.VisitCount++;
             record.Root.LastVisitedAt = now;
+            record.Root.State = CombatIdentityBuilder.State(combat);
             record.Outcome = TimelineOutcome.Ongoing;
         }
         var session = new TimelineSession(combat, store, new TimelineTree(record));

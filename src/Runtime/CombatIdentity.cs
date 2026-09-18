@@ -32,9 +32,12 @@ internal static class CombatIdentityBuilder
     {
         var player = LocalContext.GetMe(state) ?? state.Players.Single();
         var pcs = player.PlayerCombatState;
-        CreatureState[] enemies = state.Enemies.Select(enemy => new CreatureState(
-            enemy.CombatId, enemy.Monster?.Id.Entry ?? "UNKNOWN", enemy.CurrentHp,
-            enemy.MaxHp, enemy.Block, !enemy.IsDead, IntentText(state, enemy))).ToArray();
+        CreatureState[] enemies = state.Enemies.Select(enemy =>
+        {
+            var intents = IntentStates(state, enemy);
+            return new CreatureState(enemy.CombatId, enemy.Monster?.Id.Entry ?? "UNKNOWN", enemy.CurrentHp,
+                enemy.MaxHp, enemy.Block, !enemy.IsDead, IntentText(state, enemy), intents);
+        }).ToArray();
         string rng = Hash(state.RunState.Rng.StringSeed + ":" + state.RoundNumber + ":" +
             string.Join(',', enemies.Select(x => $"{x.CombatId}:{x.Hp}:{x.Block}")));
         return new CombatStateSummary(pcs?.TurnNumber ?? state.RoundNumber, player.Creature.CurrentHp,
@@ -57,6 +60,29 @@ internal static class CombatIdentityBuilder
         {
             Entry.Logger.Warn($"Could not capture intent for {enemy.Monster?.Id.Entry}: {error.Message}");
             return "?";
+        }
+    }
+
+    private static IReadOnlyList<IntentState> IntentStates(
+        CombatState state, MegaCrit.Sts2.Core.Entities.Creatures.Creature enemy)
+    {
+        try
+        {
+            return enemy.Monster?.NextMove.Intents.Select(intent =>
+            {
+                var label = intent.GetIntentLabel(state.Allies, enemy);
+                IntentVariable[] variables = label.Variables.Select(pair => new IntentVariable(
+                    pair.Key,
+                    Convert.ToString(pair.Value, System.Globalization.CultureInfo.InvariantCulture) ?? "",
+                    pair.Value switch { bool => "bool", decimal or float or double => "decimal", sbyte or byte or short or ushort or int or uint or long or ulong => "integer", _ => "string" }))
+                    .ToArray();
+                return new IntentState(intent.IntentTitle.LocEntryKey, label.LocEntryKey, variables);
+            }).ToArray() ?? [];
+        }
+        catch (Exception error)
+        {
+            Entry.Logger.Warn($"Could not capture stable intent for {enemy.Monster?.Id.Entry}: {error.Message}");
+            return [];
         }
     }
 

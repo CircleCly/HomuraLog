@@ -292,16 +292,16 @@ internal sealed partial class HomuraOverlay : CanvasLayer
     private static string IntentForDisplay(CreatureState recorded, bool useLiveIntent)
     {
         if (!useLiveIntent || !recorded.CombatId.HasValue)
-            return !HomuraText.Chinese && recorded.Intent.Any(character => character > 127) ? "" : recorded.Intent;
+            return LocalizedIntent.Format(recorded);
         try
         {
             var combat = CombatManager.Instance.DebugOnlyGetState();
             var enemy = combat?.Enemies.FirstOrDefault(candidate => candidate.CombatId == recorded.CombatId.Value);
-            if (enemy?.Monster == null) return recorded.Intent;
+            if (enemy?.Monster == null) return LocalizedIntent.Format(recorded);
             return string.Join(" + ", enemy.Monster.NextMove.Intents.Select(intent =>
                 intent.GetIntentLabel(combat!.Allies, enemy).GetFormattedText().Trim()));
         }
-        catch { return recorded.Intent; }
+        catch { return LocalizedIntent.Format(recorded); }
     }
 
     private void ShowFullGraph()

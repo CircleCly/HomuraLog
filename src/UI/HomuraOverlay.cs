@@ -420,18 +420,36 @@ internal sealed partial class HomuraOverlay : CanvasLayer
             DestroyMiniInspector();
         }
 
+        TimelineNodeSnapshot? fanout = FlattenNodes(_snapshot.Root)
+            .Where(node => node.Children.Count > 1)
+            .OrderByDescending(node => node.Children.Count)
+            .ThenByDescending(node => node.LastVisitedAt)
+            .FirstOrDefault();
+        if (fanout != null)
+        {
+            SetSharedFocus(fanout.NodeId, FocusSource.External);
+            await WaitForUiFrames(2);
+            await CaptureViewport(outputDirectory, "04-mini-largest-fanout.png");
+            if (fanout.Children.Count > MiniTimelineProjector.VisibleBranchCount)
+            {
+                _miniGraph?.SelectBranchForSmoke(fanout.Children.Count - 1);
+                await WaitForUiFrames(2);
+                await CaptureViewport(outputDirectory, "05-mini-fanout-last-window.png");
+            }
+        }
+
         ShowFullGraph();
         await WaitForUiFrames(4);
         _graphWindow?.RunLargeWindowSmokeCheck();
-        await CaptureViewport(outputDirectory, "04-large-shared-focus.png");
+        await CaptureViewport(outputDirectory, "06-large-shared-focus.png");
 
         ResetSharedFocusFromLarge();
         await WaitForUiFrames(2);
-        await CaptureViewport(outputDirectory, "05-large-reset-current.png");
+        await CaptureViewport(outputDirectory, "07-large-reset-current.png");
 
         CloseGraphWindow();
         await WaitForUiFrames(2);
-        await CaptureViewport(outputDirectory, "06-mini-reset-current.png");
+        await CaptureViewport(outputDirectory, "08-mini-reset-current.png");
         Entry.Logger.Info($"Visual smoke check captured screenshots directory={outputDirectory}.");
     }
 

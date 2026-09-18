@@ -74,6 +74,20 @@ internal sealed partial class TimelineMiniGraph : Control
         QueueRedraw();
     }
 
+    internal void SelectBranchForSmoke(int branchIndex)
+    {
+        if (_snapshot == null || _focusedNodeId == null) return;
+        TimelineNodeSnapshot? focused = Find(_snapshot.Root, _focusedNodeId);
+        if (focused == null || focused.Children.Count == 0) return;
+        _selectedBranchIndex = Math.Clamp(branchIndex, 0, focused.Children.Count - 1);
+        _branchWindowStart = Math.Clamp(
+            _selectedBranchIndex - MiniTimelineProjector.VisibleBranchCount + 1,
+            0, Math.Max(0, focused.Children.Count - MiniTimelineProjector.VisibleBranchCount));
+        _layout = null;
+        _zoom = CalculateReadableZoom();
+        CenterCurrent();
+    }
+
     public void SetSnapshot(TimelineSnapshot? snapshot)
     {
         _snapshot = snapshot;
@@ -181,15 +195,17 @@ internal sealed partial class TimelineMiniGraph : Control
 
     private float RowWidth(MiniTimelineRow row, Font font)
     {
+        if (row.IsFocused) return RegularMaxWidth;
         if (row.Node != null && _firstStepSegmentNodeIds.Contains(row.Node.NodeId)) return FirstStepWidth;
         return MeasureWidth(RowText(row), font, 16);
     }
 
     private float RowHeight(MiniTimelineRow row, Font font)
     {
-        if (row.Node == null || !_immediateNextNodeIds.Contains(row.Node.NodeId))
+        if (row.Node == null || (!row.IsFocused && !_immediateNextNodeIds.Contains(row.Node.NodeId)))
             return CompactTimelineLayout.ItemHeight;
-        int lines = WrapText(RowText(row), font, FirstStepWidth - 18, 16).Count;
+        float width = row.IsFocused ? RegularMaxWidth : FirstStepWidth;
+        int lines = WrapText(RowText(row), font, width - 18, 16).Count;
         return Math.Max(CompactTimelineLayout.ItemHeight, 10 + lines * 19);
     }
 
@@ -234,7 +250,7 @@ internal sealed partial class TimelineMiniGraph : Control
         string prefix = node.IsCurrent ? "▶ " : "";
         Font textFont = focused || selectedBranch || _immediateNextNodeIds.Contains(node.NodeId)
             ? theme.Font.BodyBold : theme.Font.Body;
-        if (_immediateNextNodeIds.Contains(node.NodeId))
+        if (focused || _immediateNextNodeIds.Contains(node.NodeId))
         {
             IReadOnlyList<string> lines = WrapText(fullText, textFont, rect.Size.X - 18, 16);
             for (int index = 0; index < lines.Count; index++)

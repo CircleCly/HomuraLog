@@ -27,6 +27,7 @@ Start-Process -FilePath $gameExecutable `
     -WorkingDirectory $gameDirectory
 
 $deadline = $startedAt.AddSeconds($TimeoutSeconds)
+$completed = $false
 do {
     Start-Sleep -Seconds 2
     if (Test-Path $logPath) {
@@ -37,9 +38,12 @@ do {
             $directory = ($match.Line -split 'directory=', 2)[1].TrimEnd('.')
             Write-Output "Visual smoke screenshots: $directory"
             Get-ChildItem -LiteralPath $directory -Filter '*.png' | Select-Object FullName, Length, LastWriteTime
-            exit 0
+            $completed = $true
+            break
         }
     }
 } while ((Get-Date) -lt $deadline)
 
-throw "Visual smoke test did not finish within $TimeoutSeconds seconds. Inspect $logPath and the Godot log."
+if (-not $completed) {
+    throw "Visual smoke test did not finish within $TimeoutSeconds seconds. Inspect $logPath and the Godot log."
+}

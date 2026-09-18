@@ -1,15 +1,19 @@
 # Visual smoke testing
 
-Run `powershell -NoProfile -ExecutionPolicy Bypass -File tools/run-visual-smoke.ps1` while Slay the Spire 2 is closed. The explicit process-only execution-policy override is needed on machines that disable local PowerShell scripts. The script builds and deploys the mod, launches the installed game with `--homuralog-visual-smoke`, loads the current run save through the existing smoke path, and waits for the mod to capture six full-viewport PNGs.
+Run `powershell -NoProfile -ExecutionPolicy Bypass -File tools/run-visual-smoke.ps1` while Slay the Spire 2 is closed. The explicit process-only execution-policy override is needed on machines that disable local PowerShell scripts. The script builds and deploys the mod, launches the installed game with `--homuralog-visual-smoke`, loads the current run save through the existing smoke path, and waits for the mod to capture up to eight full-viewport PNGs.
+
+For a real English-localization pass, run `powershell -NoProfile -ExecutionPolicy Bypass -File tools/run-visual-language.ps1 -Language eng`. This wrapper selects the most recently used Steam `settings.save`, copies it byte-for-byte to a unique temporary backup, changes only its language property, runs the screenshot suite, stops the game, restores the original bytes in `finally`, and verifies the restored SHA-256 hash. It refuses to run while the game is already open.
 
 Screenshots are written under `%APPDATA%\SlayTheSpire2\HomuraLog\visual-smoke\<timestamp>`:
 
 1. compact view focused on the player's current node;
 2. compact view focused on a different explored branch;
 3. the compact node-details window for that explored branch, including its jump action;
-4. large view opened with the same shared focus;
-5. large view after Reset View returns focus to the current node;
-6. compact view after the same reset, proving cross-view synchronization.
+4. compact view focused on the explored node with the most immediate branches, when one exists;
+5. the compact branch window shifted to include and select the last branch, when more than three exist;
+6. large view opened with the same shared focus;
+7. large view after Reset View returns focus to the current node;
+8. compact view after the same reset, proving cross-view synchronization.
 
 The capture uses Godot's rendered viewport after `FramePostDraw`. It does not depend on desktop focus, screen coordinates, Steam screenshots, or an external capture tool. It therefore continues to work when the game window is occluded.
 

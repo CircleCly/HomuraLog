@@ -1,6 +1,6 @@
 # Visual smoke testing
 
-Run `powershell -NoProfile -ExecutionPolicy Bypass -File tools/run-visual-smoke.ps1` while Slay the Spire 2 is closed. The explicit process-only execution-policy override is needed on machines that disable local PowerShell scripts. The script builds and deploys the mod, launches the installed game with `--homuralog-visual-smoke`, loads the current run save through the existing smoke path, and waits for the mod to capture up to eight full-viewport PNGs.
+Run `powershell -NoProfile -ExecutionPolicy Bypass -File tools/run-visual-smoke.ps1` while Slay the Spire 2 is closed. The explicit process-only execution-policy override is needed on machines that disable local PowerShell scripts. The script builds and deploys the mod, launches the installed game with `--homuralog-visual-smoke`, loads the current run save through the existing smoke path, and waits for the mod to capture up to twelve full-viewport PNGs.
 
 For a real English-localization pass, run `powershell -NoProfile -ExecutionPolicy Bypass -File tools/run-visual-language.ps1 -Language eng`. This wrapper selects the most recently used Steam `settings.save`, copies it byte-for-byte to a unique temporary backup, changes only its language property, runs the screenshot suite, stops the game, restores the original bytes in `finally`, and verifies the restored SHA-256 hash. It refuses to run while the game is already open.
 
@@ -16,6 +16,10 @@ Screenshots are written under `%APPDATA%\SlayTheSpire2\HomuraLog\visual-smoke\<t
 6. large view opened with the same shared focus;
 7. large view after Reset View returns focus to the current node;
 8. compact view after the same reset, proving cross-view synchronization.
+9. the native draw-pile screen, which must not contain HomuraLog windows;
+10. the native discard-pile screen, which must not contain HomuraLog windows;
+11. the native map screen, which must not contain HomuraLog windows;
+12. the native pause screen, which must not contain HomuraLog windows.
 
 The capture uses Godot's rendered viewport after `FramePostDraw`. It does not depend on desktop focus, screen coordinates, Steam screenshots, or an external capture tool. It therefore continues to work when the game window is occluded.
 
@@ -33,4 +37,4 @@ The capture uses Godot's rendered viewport after `FramePostDraw`. It does not de
 
 Run the suite once in Simplified Chinese and once in English. For resolution coverage, change the game's resolution in its settings before each run; the game's fullscreen settings override command-line `--resolution`, so command-line size arguments are not valid evidence. Screenshots preserve the actual rendered viewport size. Keep at least one save at a decision point with three or more explored branches for fan-out coverage.
 
-This is a visual smoke suite, not an input automation suite. Manual checks are still required for pointer hit targets, drag/zoom feel, jump execution, and modal suppression over draw/discard/map screens.
+This is a visual smoke suite with keyboard-driven native-screen coverage, not full pointer automation. Manual checks are still required for pointer hit targets, drag/zoom feel, and jump/delete execution.

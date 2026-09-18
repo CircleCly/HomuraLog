@@ -460,7 +460,100 @@ internal sealed partial class HomuraOverlay : CanvasLayer
         CloseGraphWindow();
         await WaitForUiFrames(2);
         await CaptureViewport(outputDirectory, "08-mini-reset-current.png");
+        await CaptureNativeScreenSuppression(outputDirectory, "mega_view_draw_pile",
+            "NCardPileScreen", "09-native-draw-pile.png");
+        await CaptureNativeScreenSuppression(outputDirectory, "mega_view_discard_pile",
+            "NCardPileScreen", "10-native-discard-pile.png");
+        await CaptureNativeScreenSuppression(outputDirectory, "mega_view_map",
+            "NMapScreen", "11-native-map.png");
+        await CaptureNativeScreenSuppression(outputDirectory, "mega_pause_and_back",
+            "NCapstoneSubmenuStack", "12-native-pause.png");
         Entry.Logger.Info($"Visual smoke check captured screenshots directory={outputDirectory}.");
+    }
+
+    private async Task CaptureNativeScreenSuppression(
+        string directory, string action, string expectedScreen, string fileName)
+    {
+        if (!InputMap.HasAction(action))
+        {
+            Entry.Logger.Warn($"Visual smoke native-screen check skipped; input action is unavailable action={action}.");
+            return;
+        }
+        InputEventKey? binding = InputMap.ActionGetEvents(action).OfType<InputEventKey>().FirstOrDefault()
+            ?? DefaultVisualSmokeBinding(action);
+        if (binding == null) return;
+        Input.ParseInputEvent(CopyKeyEvent(binding, true));
+        await WaitForUiFrames(1);
+        Input.ParseInputEvent(CopyKeyEvent(binding, false));
+        bool reachedExpectedScreen = await WaitForScreen(expectedScreen, 180);
+        // Screen context changes before the native transition animation has settled.
+        await WaitForUiFrames(60);
+        string screen = CurrentScreenName();
+        bool paused = RunManager.Instance.IsPaused;
+        Entry.Logger.Info($"Visual smoke native-screen action={action} expected={expectedScreen} " +
+            $"binding={binding.AsText()} reached={reachedExpectedScreen} screen={screen} " +
+            $"paused={paused} panelVisible={_panel?.Visible}.");
+        if (!reachedExpectedScreen)
+        {
+            Entry.Logger.Warn($"Visual smoke native-screen check unavailable; the action did not open its screen " +
+                $"(the pile may be empty) action={action}.");
+            return;
+        }
+        await CaptureViewport(directory, fileName);
+
+        Input.ParseInputEvent(new InputEventKey { Keycode = Key.Escape, PhysicalKeycode = Key.Escape, Pressed = true });
+        await WaitForUiFrames(1);
+        Input.ParseInputEvent(new InputEventKey { Keycode = Key.Escape, PhysicalKeycode = Key.Escape, Pressed = false });
+        await WaitForScreen("NCombatRoom", 180);
+        await WaitForUiFrames(30);
+    }
+
+    private static InputEventKey CopyKeyEvent(InputEventKey source, bool pressed) => new()
+    {
+        Keycode = source.Keycode,
+        PhysicalKeycode = source.PhysicalKeycode,
+        KeyLabel = source.KeyLabel,
+        Unicode = source.Unicode,
+        Location = source.Location,
+        CtrlPressed = source.CtrlPressed,
+        AltPressed = source.AltPressed,
+        ShiftPressed = source.ShiftPressed,
+        MetaPressed = source.MetaPressed,
+        Pressed = pressed
+    };
+
+    private static InputEventKey? DefaultVisualSmokeBinding(string action)
+    {
+        Key key = action switch
+        {
+            "mega_view_draw_pile" => Key.A,
+            "mega_view_discard_pile" => Key.S,
+            "mega_view_map" => Key.M,
+            "mega_pause_and_back" => Key.Escape,
+            _ => Key.None
+        };
+        if (key == Key.None)
+        {
+            Entry.Logger.Warn($"Visual smoke native-screen check skipped; no fallback binding action={action}.");
+            return null;
+        }
+        return new InputEventKey { Keycode = key, PhysicalKeycode = key };
+    }
+
+    private async Task<bool> WaitForScreen(string expectedScreen, int maximumFrames)
+    {
+        for (int frame = 0; frame < maximumFrames; frame++)
+        {
+            if (string.Equals(CurrentScreenName(), expectedScreen, StringComparison.Ordinal)) return true;
+            await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+        }
+        return false;
+    }
+
+    private static string CurrentScreenName()
+    {
+        try { return ActiveScreenContext.Instance.GetCurrentScreen()?.GetType().Name ?? "null"; }
+        catch { return "unavailable"; }
     }
 
     private static Vector2I RequestedVisualSmokeSize()

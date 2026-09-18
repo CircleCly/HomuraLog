@@ -11,6 +11,8 @@ Evidence is stored under `%APPDATA%\SlayTheSpire2\HomuraLog\visual-smoke`. The 2
 - Compact details identify the action, hand position, visit count, combat state, localized enemy name, result, and jump action.
 - Chinese and English chrome, card names, enemy names, and ongoing outcome labels refresh with the game language.
 - All tested windows remain inside 2560×1440, 1600×900, and 1280×720 captures.
+- HomuraLog windows are absent from the native draw-pile, map, and pause screens. The smoke harness confirms the expected native screen type and waits for its transition to settle before capturing.
+- Hiding is scoped to HomuraLog: unrelated mod overlays remain visible on the tested native screens.
 
 ## Usability issues found
 
@@ -30,5 +32,5 @@ Evidence is stored under `%APPDATA%\SlayTheSpire2\HomuraLog\visual-smoke`. The 2
 - Dragging and wheel zoom in both views.
 - Jump execution from compact details and the large inspector.
 - Delete-node execution and focus fallback.
-- Suppression while draw pile, discard pile, map, and pause screens are open.
+- Suppression while the discard-pile screen is open; the current smoke save has an empty discard pile, so the harness records the unmet precondition instead of a false pass.
 - A second native display/UI-scale configuration, rather than only resizing the same Godot logical viewport.

@@ -152,12 +152,18 @@ for (int right = left + 1; right < variableItems.Length; right++)
 }
 
 LargeWindowBounds hdWindow = LargeWindowGeometry.Default(1920, 1080);
-Assert(hdWindow.Width == 1536 && hdWindow.Height == 810
-    && hdWindow.X == 192 && hdWindow.Y == 135,
-    "The large timeline window must default to 80% by 75% and remain centered at 1920x1080.");
+Assert(Math.Abs(hdWindow.Width - 1163.25f) < 0.1f && Math.Abs(hdWindow.Height - 578f) < 0.1f
+    && hdWindow.X == 24 && Math.Abs(hdWindow.Y - 166.5f) < 0.1f,
+    "The large timeline window must use the approved logical viewport preset captured on the 1440p display.");
 LargeWindowBounds qhdWindow = LargeWindowGeometry.Default(2560, 1440);
-Assert(qhdWindow.Width == 2048 && qhdWindow.Height == 1080,
+Assert(Math.Abs(qhdWindow.Width / 2560 - LargeWindowGeometry.WidthRatio) < 0.001f
+    && Math.Abs(qhdWindow.Height / 1440 - LargeWindowGeometry.HeightRatio) < 0.001f,
     "The large timeline window must scale responsively at 2560x1440.");
+Assert(!LargeWindowGeometry.IsReasonableSavedLayout(
+        new LargeWindowBounds(378, 24, 1163.25f, 1032), 1920, 1080),
+    "An initialization-corrupted near-fullscreen layout must be rejected.");
+Assert(LargeWindowGeometry.IsReasonableSavedLayout(hdWindow, 1920, 1080),
+    "The approved large-window preset must remain restorable.");
 LargeWindowBounds smallWindow = LargeWindowGeometry.Default(800, 600);
 Assert(smallWindow.X >= LargeWindowGeometry.Margin && smallWindow.Y >= LargeWindowGeometry.Margin
     && smallWindow.X + smallWindow.Width <= 800 - LargeWindowGeometry.Margin

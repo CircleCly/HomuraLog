@@ -30,6 +30,8 @@ internal sealed partial class TimelineGraphWindow : CanvasLayer
     private bool _closedNotified;
     private Viewport? _viewport;
     private bool _applyingBounds;
+    private bool _boundsInitialized;
+    private bool _usingPreferredBounds;
     private bool _layoutDirty;
     private ulong _layoutSaveAt;
 
@@ -143,6 +145,20 @@ internal sealed partial class TimelineGraphWindow : CanvasLayer
         ApplyDefaultLargeBounds();
         SetProcess(true);
         Render();
+        // RitsuFloatingWindow applies its own initial rect after entering the tree. Reapply
+        // our persisted rect after that pass, then begin observing user-driven changes.
+        Callable.From(() => Callable.From(() =>
+        {
+            if (!GodotObject.IsInstanceValid(this)) return;
+            ApplyDefaultLargeBounds();
+            _boundsInitialized = true;
+            CenterCurrent();
+            if (_usingPreferredBounds)
+            {
+                _layoutDirty = true;
+                _layoutSaveAt = Time.GetTicksMsec() + 500;
+            }
+        }).CallDeferred()).CallDeferred();
     }
 
     public override void _Process(double delta)
@@ -246,14 +262,17 @@ internal sealed partial class TimelineGraphWindow : CanvasLayer
         Vector2 viewport = GetViewport().GetVisibleRect().Size;
         SavedLargeWindowLayout? saved = _layoutStore.Load();
         LargeWindowBounds? restored = saved?.Resolve(viewport.X, viewport.Y);
-        LargeWindowBounds bounds = saved == null
+        bool useSaved = restored != null
+            && LargeWindowGeometry.IsReasonableSavedLayout(restored, viewport.X, viewport.Y);
+        _usingPreferredBounds = !useSaved;
+        LargeWindowBounds bounds = !useSaved
             ? LargeWindowGeometry.Default(viewport.X, viewport.Y)
             : LargeWindowGeometry.Clamp(viewport.X, viewport.Y,
                 restored!.X, restored.Y, restored.Width, restored.Height);
         ApplyBounds(bounds);
-        Entry.Logger.Info(saved == null
-            ? $"Large timeline window using responsive default bounds={bounds}."
-            : $"Large timeline window restored saved bounds={bounds} savedViewport={saved.ViewportWidth}x{saved.ViewportHeight}.");
+        Entry.Logger.Info(!useSaved
+            ? $"Large timeline window using preferred responsive bounds={bounds}."
+            : $"Large timeline window restored saved bounds={bounds} savedViewport={saved!.ViewportWidth}x{saved.ViewportHeight}.");
     }
 
     private void ClampToViewport()
@@ -277,7 +296,7 @@ internal sealed partial class TimelineGraphWindow : CanvasLayer
 
     private void OnWindowRectChanged()
     {
-        if (_applyingBounds || !IsInsideTree()) return;
+        if (_applyingBounds || !_boundsInitialized || !IsInsideTree()) return;
         _layoutDirty = true;
         _layoutSaveAt = Time.GetTicksMsec() + 500;
     }

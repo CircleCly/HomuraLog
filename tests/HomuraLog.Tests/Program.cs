@@ -87,6 +87,12 @@ Assert(chainProjection.Root.Rows.Count == 3 && chainProjection.Root.Rows[^1].IsF
 Assert(chainProjection.Root.Children.Count == 1
     && chainProjection.Root.Children[0].Rows.Count == 3,
     "A visible branch must contain its first action and at most two continuation actions.");
+CompactTimelineLayoutResult singleBranchLayout = CompactTimelineLayout.Create(
+    chainProjection.Root, _ => 160, _ => 160);
+CompactTimelineItem singleFocus = singleBranchLayout.Items.Single(item => item.Row?.IsFocused == true);
+CompactTimelineItem singleChild = singleBranchLayout.Items.First(item => item.Row?.IsBranchFirstStep == true);
+Assert(Math.Abs((singleFocus.X + singleFocus.Width / 2) - (singleChild.X + singleChild.Width / 2)) < 0.1f,
+    "A sole branch must remain centered beneath the focused node.");
 
 var fanoutRecord = Record("projection-fanout");
 TimelineAction[] fanoutActions = Enumerable.Range(0, 8)
@@ -119,6 +125,22 @@ MiniTimelineProjection rightBoundaryProjection = MiniTimelineProjector.Create(
 Assert(rightBoundaryProjection.SelectedBranchIndex == 7
     && rightBoundaryProjection.BranchWindowStart == 5,
     "Branch selection and its three-item window must clamp at the right boundary.");
+
+var twoBranchRecord = Record("projection-two-branches");
+foreach (TimelineAction action in fanoutActions.Take(2))
+    new TimelineTree(twoBranchRecord).Append(action, state, DateTimeOffset.UtcNow);
+TimelineSnapshot twoBranchSnapshot = new TimelineTree(twoBranchRecord).Snapshot();
+MiniTimelineProjection twoBranchProjection = MiniTimelineProjector.Create(
+    twoBranchSnapshot, twoBranchSnapshot.CurrentNodeId, 0, 0);
+CompactTimelineLayoutResult twoBranchLayout = CompactTimelineLayout.Create(
+    twoBranchProjection.Root, _ => 160, _ => 160);
+float focusCenter = twoBranchLayout.Items.Single(item => item.Row?.IsFocused == true).X + 80;
+float[] branchCenters = twoBranchLayout.Items.Where(item => item.Row?.IsBranchFirstStep == true)
+    .Select(item => item.X + 80).Order().ToArray();
+Assert(branchCenters.Length == 2 && branchCenters[0] < focusCenter && branchCenters[1] > focusCenter,
+    "Two branches must occupy opposite sides of the focused node.");
+Assert(branchCenters[1] - branchCenters[0] >= 2 * (160 + 36),
+    "Two branches should use the available horizontal space instead of clustering centrally.");
 
 CompactTimelineLayoutResult compactFanout = CompactTimelineLayout.Create(
     fanoutProjection.Root, _ => 180, _ => 180);

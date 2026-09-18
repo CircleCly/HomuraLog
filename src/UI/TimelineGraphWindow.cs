@@ -25,7 +25,6 @@ internal sealed partial class TimelineGraphWindow : CanvasLayer
     private readonly Dictionary<string, Button> _nodeRows = new(StringComparer.Ordinal);
     private TimelineSnapshot _snapshot;
     private string? _selectedNodeId;
-    private bool _jumpArmed;
     private bool _panning;
     private bool _closedNotified;
     private Viewport? _viewport;
@@ -211,7 +210,6 @@ internal sealed partial class TimelineGraphWindow : CanvasLayer
         _segmentByNode.Clear();
         _segmentTail.Clear();
         _nodeRows.Clear();
-        _jumpArmed = false;
         _jumpButton.Text = HomuraText.JumpHere;
 
         List<TimelineNodeSnapshot> nodes = SelectNodes(_snapshot.Root, MaxRenderedNodes);
@@ -337,7 +335,6 @@ internal sealed partial class TimelineGraphWindow : CanvasLayer
         if (!_nodes.TryGetValue(nodeId, out TimelineNodeSnapshot? node)) return;
         _selectedNodeId = nodeId;
         RefreshSelectionHighlight();
-        _jumpArmed = false;
         _jumpButton.Text = HomuraText.JumpHere;
         _jumpButton.Disabled = node.Action == null || node.IsCurrent;
         _deleteButton.Disabled = node.Action == null;
@@ -355,12 +352,6 @@ internal sealed partial class TimelineGraphWindow : CanvasLayer
     {
         if (_selectedNodeId == null || !_nodes.TryGetValue(_selectedNodeId, out TimelineNodeSnapshot? node)
             || node.Action == null) return;
-        if (!_jumpArmed)
-        {
-            _jumpArmed = true;
-            _jumpButton.Text = HomuraText.ConfirmJump;
-            return;
-        }
         _jumpButton.Disabled = true;
         JumpRequested?.Invoke(_selectedNodeId);
     }

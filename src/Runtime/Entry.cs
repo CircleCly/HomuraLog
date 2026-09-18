@@ -22,7 +22,9 @@ public static class Entry
     private static bool _multiplayerWarned;
     private static CombatState? _watchdogRejectedCombat;
     private static bool _watchdogRecovering;
-    private static readonly bool SmokeCheck = System.Environment.GetCommandLineArgs()
+    private static readonly bool VisualSmoke = System.Environment.GetCommandLineArgs()
+        .Contains("--homuralog-visual-smoke", StringComparer.OrdinalIgnoreCase);
+    private static readonly bool SmokeCheck = VisualSmoke || System.Environment.GetCommandLineArgs()
         .Contains("--homuralog-smoke", StringComparer.OrdinalIgnoreCase);
     private static bool _smokeReplayRequested;
 
@@ -63,7 +65,7 @@ public static class Entry
             _overlay!.Bind(Session);
             if (SmokeCheck) _overlay.RunSmokeCheck();
             WorldlineReplayController.OnCombatStarted(Session);
-            if (SmokeCheck && !_smokeReplayRequested)
+            if (SmokeCheck && !VisualSmoke && !_smokeReplayRequested)
             {
                 _smokeReplayRequested = true;
                 TaskHelper.RunSafely(RunSmokeReplayAsync(Session));

@@ -2,6 +2,7 @@ using Godot;
 using HomuraLog.Domain;
 using HomuraLog.Runtime;
 using MegaCrit.Sts2.Core.Combat;
+using MegaCrit.Sts2.Core.Helpers;
 using MegaCrit.Sts2.Core.Entities.Multiplayer;
 using MegaCrit.Sts2.Core.Nodes.Combat;
 using MegaCrit.Sts2.Core.Nodes.Potions;
@@ -386,10 +387,66 @@ internal sealed partial class HomuraOverlay : CanvasLayer
 
     internal void RunSmokeCheck()
     {
+        TaskHelper.RunSafely(RunVisualSmokeCheckAsync());
+    }
+
+    private async Task RunVisualSmokeCheckAsync()
+    {
+        await WaitForUiFrames(4);
+        if (_snapshot == null) return;
+        string outputDirectory = Path.Combine(OS.GetUserDataDir(), "HomuraLog", "visual-smoke",
+            DateTimeOffset.Now.ToString("yyyyMMdd-HHmmss"));
+        Directory.CreateDirectory(outputDirectory);
+
+        await WaitForUiFrames(3);
+        await CaptureViewport(outputDirectory, "01-mini-current.png");
+
+        TimelineNodeSnapshot? alternate = FlattenNodes(_snapshot.Root)
+            .FirstOrDefault(node => !node.IsCurrent && node.Action != null && !node.IsOnCurrentPath)
+            ?? FlattenNodes(_snapshot.Root).FirstOrDefault(node => !node.IsCurrent && node.Action != null);
+        if (alternate != null)
+        {
+            SetSharedFocus(alternate.NodeId, FocusSource.External);
+            await WaitForUiFrames(2);
+            await CaptureViewport(outputDirectory, "02-mini-alternate-focus.png");
+        }
+
         ShowFullGraph();
-        if (_graphWindow != null)
-            Callable.From(_graphWindow.RunLargeWindowSmokeCheck).CallDeferred();
-        Entry.Logger.Info("UI smoke check created the Ritsu main window, compact graph, and large timeline graph.");
+        await WaitForUiFrames(4);
+        _graphWindow?.RunLargeWindowSmokeCheck();
+        await CaptureViewport(outputDirectory, "03-large-shared-focus.png");
+
+        ResetSharedFocusFromLarge();
+        await WaitForUiFrames(2);
+        await CaptureViewport(outputDirectory, "04-large-reset-current.png");
+
+        CloseGraphWindow();
+        await WaitForUiFrames(2);
+        await CaptureViewport(outputDirectory, "05-mini-reset-current.png");
+        Entry.Logger.Info($"Visual smoke check captured screenshots directory={outputDirectory}.");
+    }
+
+    private async Task WaitForUiFrames(int count)
+    {
+        for (int index = 0; index < count; index++)
+            await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+    }
+
+    private async Task CaptureViewport(string directory, string fileName)
+    {
+        await ToSignal(RenderingServer.Singleton, RenderingServer.SignalName.FramePostDraw);
+        string path = Path.Combine(directory, fileName);
+        Error result = GetViewport().GetTexture().GetImage().SavePng(path);
+        if (result == Error.Ok) Entry.Logger.Info($"Visual smoke screenshot saved path={path}.");
+        else Entry.Logger.Warn($"Visual smoke screenshot failed path={path} error={result}.");
+    }
+
+    private static IEnumerable<TimelineNodeSnapshot> FlattenNodes(TimelineNodeSnapshot node)
+    {
+        yield return node;
+        foreach (TimelineNodeSnapshot child in node.Children)
+        foreach (TimelineNodeSnapshot descendant in FlattenNodes(child))
+            yield return descendant;
     }
 
     private void CloseGraphWindow()

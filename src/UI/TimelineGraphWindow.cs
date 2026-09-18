@@ -362,7 +362,7 @@ internal sealed partial class TimelineGraphWindow : CanvasLayer
             string.Join('\n', node.State.Enemies.Select(enemy =>
                 $"  {LocalizedModelNames.Monster(enemy.ModelId)}: {enemy.Hp}/{enemy.MaxHp}" + (enemy.Block > 0 ? $" +{enemy.Block}" : "")
                 + (string.IsNullOrWhiteSpace(LocalizedIntent.Format(enemy)) ? "" : $" · {HomuraText.Intent}: {LocalizedIntent.Format(enemy)}")));
-        _details.Text = $"{action}\n\n{HomuraText.Visits(node.Visits)}\n{node.Outcome}\n\n{state}";
+        _details.Text = $"{action}\n\n{HomuraText.Visits(node.Visits)}\n{OutcomeLabel(node.Outcome)}\n\n{state}";
     }
 
     private void RequestJump()
@@ -503,6 +503,14 @@ internal sealed partial class TimelineGraphWindow : CanvasLayer
         TimelineOutcome.Defeat => $"☠ {HomuraText.OutcomeDefeat}",
         TimelineOutcome.Aborted => $"↺ {HomuraText.OutcomeAborted}",
         _ => "…",
+    };
+
+    private static string OutcomeLabel(TimelineOutcome outcome) => outcome switch
+    {
+        TimelineOutcome.Victory => HomuraText.OutcomeVictory,
+        TimelineOutcome.Defeat => HomuraText.OutcomeDefeat,
+        TimelineOutcome.Aborted => HomuraText.OutcomeAborted,
+        _ => HomuraText.OutcomeOngoing,
     };
 
     private static List<TimelineNodeSnapshot> SelectNodes(TimelineNodeSnapshot root, int limit)

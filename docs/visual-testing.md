@@ -27,13 +27,15 @@ Screenshots are written under `%APPDATA%\SlayTheSpire2\HomuraLog\visual-smoke\<t
 
 The capture uses Godot's rendered viewport after `FramePostDraw`. It does not depend on desktop focus, screen coordinates, Steam screenshots, or an external capture tool. It therefore continues to work when the game window is occluded.
 
+In addition to screenshot state, the suite asserts that opening the large view hides the compact window, closing it restores it, the compact canvas retains its navigation safe area and readable automatic zoom, and the large view hides GraphEdit's built-in toolbar in favor of localized controls.
+
 The runner waits for an explicit assertion summary, not merely for the last screenshot. Missing fixtures, failed required screen transitions, a visible HomuraLog panel over a native modal, failed pointer state changes, or fewer than 15 required screenshots produce a non-zero script exit code. The discard-pile capture is optional when the loaded combat has an empty discard pile and is logged as an unmet fixture precondition instead of a pass.
 
 For an end-to-end mutation pass, run `powershell -NoProfile -ExecutionPolicy Bypass -File tools/run-visual-destructive.ps1`. It backs up the complete HomuraLog timeline directory and every discovered native `current_run.save`, executes recorded forward actions through the compact jump button until the discard pile is testable, captures the real discard-pile screen, deletes one off-path subtree through the large-view button, verifies the results, stops the game, restores all backups, and verifies per-file SHA-256 state for both native saves and the timeline directory. Do not pass `-Destructive` directly to the lower-level smoke runner unless external backup and process cleanup are already arranged.
 
 ## Review checklist
 
-- The gold focus outline identifies the same exact node in screenshots 2 and 3.
+- The cyan-white focus outline and diamond identify the same exact node in screenshots 2 and 3.
 - Reset View identifies the player node in screenshots 4 and 5.
 - The orange current-position marker remains distinct when browsing another node.
 - The first step of every visible compact branch is fully readable.

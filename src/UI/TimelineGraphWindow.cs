@@ -19,6 +19,8 @@ internal sealed partial class TimelineGraphWindow : CanvasLayer
     private readonly Label _details;
     private readonly Button _jumpButton;
     private readonly Button _deleteButton;
+    private readonly Label _zoomLabel;
+    private readonly Button _minimapButton;
     private readonly Dictionary<string, TimelineNodeSnapshot> _nodes = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> _segmentByNode = new(StringComparer.Ordinal);
     private readonly Dictionary<string, TimelineNodeSnapshot> _segmentTail = new(StringComparer.Ordinal);
@@ -75,7 +77,23 @@ internal sealed partial class TimelineGraphWindow : CanvasLayer
         };
         ApplyBodyFont(help);
         toolbar.AddChild(help);
+        Button zoomOut = new() { Text = "−", TooltipText = HomuraText.ZoomOut, FocusMode = Control.FocusModeEnum.None };
+        ApplyButtonFont(zoomOut);
+        zoomOut.Pressed += () => ChangeZoom(1f / 1.15f);
+        toolbar.AddChild(zoomOut);
+        _zoomLabel = new Label { CustomMinimumSize = new Vector2(54, 0), HorizontalAlignment = HorizontalAlignment.Center };
+        ApplyBodyFont(_zoomLabel);
+        toolbar.AddChild(_zoomLabel);
+        Button zoomIn = new() { Text = "+", TooltipText = HomuraText.ZoomIn, FocusMode = Control.FocusModeEnum.None };
+        ApplyButtonFont(zoomIn);
+        zoomIn.Pressed += () => ChangeZoom(1.15f);
+        toolbar.AddChild(zoomIn);
+        _minimapButton = new Button { Text = HomuraText.Minimap, ToggleMode = true, ButtonPressed = true,
+            TooltipText = HomuraText.Minimap, FocusMode = Control.FocusModeEnum.None };
+        ApplyButtonFont(_minimapButton);
+        toolbar.AddChild(_minimapButton);
         Button center = new() { Text = HomuraText.ResetView, FocusMode = Control.FocusModeEnum.None };
+        center.TooltipText = HomuraText.ResetView;
         ApplyButtonFont(center);
         center.Pressed += () => ResetViewRequested?.Invoke();
         toolbar.AddChild(center);
@@ -92,11 +110,13 @@ internal sealed partial class TimelineGraphWindow : CanvasLayer
             CustomMinimumSize = new Vector2(430, 340),
             ShowGrid = true,
             MinimapEnabled = true,
-            ShowZoomLabel = true,
+            ShowZoomLabel = false,
+            ShowMenu = false,
             RightDisconnects = false,
         };
         _graph.NodeSelected += OnNodeSelected;
         _graph.GuiInput += OnGraphGuiInput;
+        _minimapButton.Toggled += enabled => _graph.MinimapEnabled = enabled;
         _arrows = new ArrowOverlay(_graph)
         {
             MouseFilter = Control.MouseFilterEnum.Ignore,
@@ -104,9 +124,21 @@ internal sealed partial class TimelineGraphWindow : CanvasLayer
         };
         _arrows.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
         _graph.AddChild(_arrows);
+        Callable.From(HideBuiltInGraphToolbar).CallDeferred();
         split.AddChild(_graph);
 
-        VBoxContainer inspector = new() { CustomMinimumSize = new Vector2(240, 0) };
+        PanelContainer inspectorPanel = new() { CustomMinimumSize = new Vector2(240, 0) };
+        inspectorPanel.AddThemeStyleboxOverride("panel", new StyleBoxFlat
+        {
+            BgColor = new Color("111923e8"),
+            BorderColor = new Color("53606d"),
+            BorderWidthLeft = 1,
+            ContentMarginLeft = 12,
+            ContentMarginRight = 12,
+            ContentMarginTop = 8,
+            ContentMarginBottom = 8,
+        });
+        VBoxContainer inspector = new();
         Label inspectorTitle = new() { Text = HomuraText.Details };
         inspectorTitle.AddThemeFontOverride("font", RitsuShellTheme.Current.Font.BodyBold);
         inspectorTitle.AddThemeFontSizeOverride("font_size", 20);
@@ -128,7 +160,8 @@ internal sealed partial class TimelineGraphWindow : CanvasLayer
         ApplyButtonFont(_deleteButton);
         _deleteButton.Pressed += RequestDelete;
         inspector.AddChild(_deleteButton);
-        split.AddChild(inspector);
+        inspectorPanel.AddChild(inspector);
+        split.AddChild(inspectorPanel);
         content.AddChild(split);
         _window.SetContent(content);
         AddChild(_window);
@@ -144,6 +177,10 @@ internal sealed partial class TimelineGraphWindow : CanvasLayer
     internal string? SmokeSelectedNodeId => _selectedNodeId;
     internal float SmokeZoom => _graph.Zoom;
     internal Vector2 SmokeScrollOffset => _graph.ScrollOffset;
+    internal bool SmokeBuiltInToolbarHidden => _graph.GetChildren()
+        .OfType<HBoxContainer>().All(toolbar => !toolbar.Visible);
+    internal string SmokeJumpTooltip => _jumpButton.TooltipText;
+    internal string SmokeDeleteTooltip => _deleteButton.TooltipText;
 
     internal bool PrepareNodeRowPointerTest(string nodeId)
     {
@@ -197,6 +234,7 @@ internal sealed partial class TimelineGraphWindow : CanvasLayer
 
     public override void _Process(double delta)
     {
+        _zoomLabel.Text = $"{Math.Round(_graph.Zoom * 100):0}%";
         if (_layoutDirty && Time.GetTicksMsec() >= _layoutSaveAt) FlushLayout();
     }
 
@@ -225,6 +263,14 @@ internal sealed partial class TimelineGraphWindow : CanvasLayer
         _snapshot = snapshot;
         _selectedNodeId = focusedNodeId;
         if (IsInsideTree()) Render();
+    }
+
+    public void RefreshActionAvailability()
+    {
+        TimelineNodeSnapshot? node = _selectedNodeId != null && _nodes.TryGetValue(_selectedNodeId, out var selected)
+            ? selected : null;
+        ApplyAvailability(TimelineActionAvailability.Evaluate(_snapshot, node,
+            WorldlineReplayController.IsBusy));
     }
 
     public void SetFocusedNode(string nodeId, bool center = true)
@@ -385,16 +431,36 @@ internal sealed partial class TimelineGraphWindow : CanvasLayer
         _selectedNodeId = nodeId;
         RefreshSelectionHighlight();
         _jumpButton.Text = HomuraText.JumpHere;
-        _jumpButton.Disabled = node.Action == null || node.IsCurrent;
-        _deleteButton.Disabled = node.Action == null;
+        ApplyAvailability(TimelineActionAvailability.Evaluate(_snapshot, node,
+            WorldlineReplayController.IsBusy));
         string action = node.Action == null ? HomuraText.Root : HomuraOverlay.ActionText(node.Action);
         string state = node.State == null ? HomuraText.None :
             $"T{node.State.Turn}\n{HomuraText.Hp} {node.State.PlayerHp}/{node.State.PlayerMaxHp}\n" +
             $"{HomuraText.Block} {node.State.PlayerBlock}\n{HomuraText.Energy} {node.State.Energy}\n{HomuraText.EnemyHp}\n" +
-            string.Join('\n', node.State.Enemies.Select(enemy =>
-                $"  {LocalizedModelNames.Monster(enemy.ModelId)}: {enemy.Hp}/{enemy.MaxHp}" + (enemy.Block > 0 ? $" +{enemy.Block}" : "")
-                + (string.IsNullOrWhiteSpace(LocalizedIntent.Format(enemy)) ? "" : $" · {HomuraText.Intent}: {LocalizedIntent.Format(enemy)}")));
+            string.Join('\n', node.State.Enemies.Select(FormatEnemyState));
         _details.Text = $"{action}\n\n{HomuraText.Visits(node.Visits)}\n{OutcomeLabel(node.Outcome)}\n\n{state}";
+    }
+
+    private static string FormatEnemyState(CreatureState enemy)
+    {
+        string header = $"  {LocalizedModelNames.Monster(enemy.ModelId)}: {enemy.Hp}/{enemy.MaxHp}"
+            + (enemy.Block > 0 ? $" +{enemy.Block}" : "");
+        IReadOnlyList<string> intents = LocalizedIntent.FormatLines(enemy);
+        return intents.Count == 0 ? header : header + "\n"
+            + string.Join('\n', intents.Select(intent => $"    {HomuraText.Intent}: {intent}"));
+    }
+
+    private void ApplyAvailability(TimelineActionAvailability availability)
+    {
+        ApplyButtonAvailability(_jumpButton, availability.JumpEnabled, availability.JumpReason);
+        ApplyButtonAvailability(_deleteButton, availability.DeleteEnabled, availability.DeleteReason);
+    }
+
+    private static void ApplyButtonAvailability(Button button, bool enabled, string reason)
+    {
+        button.Disabled = !enabled;
+        button.TooltipText = reason;
+        button.AddThemeColorOverride("font_disabled_color", new Color("9facb9"));
     }
 
     private void RequestJump()
@@ -451,7 +517,7 @@ internal sealed partial class TimelineGraphWindow : CanvasLayer
                 Alignment = HorizontalAlignment.Left,
                 Flat = true,
                 FocusMode = Control.FocusModeEnum.None,
-                TooltipText = text,
+                TooltipText = node.IsCurrent ? $"{text} · {HomuraText.PlayerPosition}" : text,
             };
             ApplyButtonFont(row);
             if (node.IsCurrent) row.AddThemeColorOverride("font_color", new Color("f4b860"));
@@ -482,19 +548,26 @@ internal sealed partial class TimelineGraphWindow : CanvasLayer
     {
         foreach ((string id, Button row) in _nodeRows)
         {
+            if (row.Text.StartsWith("◇ ", StringComparison.Ordinal)) row.Text = row.Text[2..];
             row.RemoveThemeStyleboxOverride("normal");
             row.RemoveThemeStyleboxOverride("hover");
             row.RemoveThemeColorOverride("font_hover_color");
             if (_nodes.TryGetValue(id, out TimelineNodeSnapshot? node))
+            {
                 row.AddThemeColorOverride("font_color", node.IsCurrent ? new Color("f4b860")
                     : node.IsOnCurrentPath ? new Color("70b7ed") : RitsuShellTheme.Current.Text.LabelPrimary);
+                string action = node.Action == null ? HomuraText.Root : HomuraOverlay.ActionText(node.Action);
+                row.TooltipText = node.IsCurrent ? $"{action} · {HomuraText.PlayerPosition}" : action;
+            }
             bool selectedRow = id == _selectedNodeId;
             row.Flat = !selectedRow;
             if (!selectedRow) continue;
+            bool selectedCurrent = _nodes.TryGetValue(id, out TimelineNodeSnapshot? selectedNode)
+                && selectedNode.IsCurrent;
             StyleBoxFlat selected = new()
             {
-                BgColor = new Color("755522"),
-                BorderColor = new Color("ffd166"),
+                BgColor = selectedCurrent ? new Color("64461e") : new Color("172b38"),
+                BorderColor = new Color("d9fbff"),
                 CornerRadiusTopLeft = 5,
                 CornerRadiusTopRight = 5,
                 CornerRadiusBottomLeft = 5,
@@ -508,6 +581,9 @@ internal sealed partial class TimelineGraphWindow : CanvasLayer
             };
             row.AddThemeStyleboxOverride("normal", selected);
             row.AddThemeStyleboxOverride("hover", selected);
+            if (!row.Text.StartsWith("◇ ", StringComparison.Ordinal)) row.Text = "◇ " + row.Text;
+            if (!row.TooltipText.Contains(HomuraText.FocusedNode, StringComparison.Ordinal))
+                row.TooltipText += $" · {HomuraText.FocusedNode}";
             row.AddThemeColorOverride("font_color", Colors.White);
             row.AddThemeColorOverride("font_hover_color", Colors.White);
         }
@@ -525,6 +601,19 @@ internal sealed partial class TimelineGraphWindow : CanvasLayer
             _graph.ScrollOffset -= motion.Relative / Math.Max(_graph.Zoom, 0.01f);
             _graph.AcceptEvent();
         }
+    }
+
+    private void ChangeZoom(float factor)
+    {
+        string? selected = _selectedNodeId;
+        _graph.Zoom = Math.Clamp(_graph.Zoom * factor, 0.25f, 2f);
+        if (selected != null) Callable.From(() => CenterNode(selected)).CallDeferred();
+    }
+
+    private void HideBuiltInGraphToolbar()
+    {
+        foreach (Node child in _graph.GetChildren())
+            if (child is HBoxContainer toolbar) toolbar.Visible = false;
     }
 
     private static void ApplyBodyFont(Control control) =>

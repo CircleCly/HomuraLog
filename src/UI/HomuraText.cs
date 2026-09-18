@@ -42,6 +42,19 @@ internal static class HomuraText
     public static string DeleteNode => Chinese ? "删除节点及后续分支" : "Delete node and descendants";
     public static string ConfirmJump => Chinese ? "再次点击确认跳转" : "Click again to confirm jump";
     public static string JumpRootUnavailable => Chinese ? "战斗入口无需回放" : "The combat entry needs no replay";
+    public static string JumpCurrentUnavailable => Chinese ? "已经位于这个世界线节点" : "You are already at this timeline node";
+    public static string JumpAvailable => Chinese ? "执行记录操作并前往这个世界线节点" : "Follow the recorded actions to this timeline node";
+    public static string DeleteRootUnavailable => Chinese ? "战斗入口不能删除" : "The combat entry cannot be deleted";
+    public static string DeleteAvailable => Chinese ? "删除此节点及其所有后续分支" : "Delete this node and all descendants";
+    public static string NodeUnavailable => Chinese ? "此节点已不存在" : "This node is no longer available";
+    public static string FocusedNode => Chinese ? "聚焦节点" : "Focused node";
+    public static string PlayerPosition => Chinese ? "玩家当前位置" : "Player position";
+    public static string SelectedBranch => Chinese ? "选中的候选分支" : "Selected candidate branch";
+    public static string DragForMore => Chinese ? "拖动画布查看更多" : "Drag the canvas to see more";
+    public static string ZoomOut => Chinese ? "缩小" : "Zoom out";
+    public static string ZoomIn => Chinese ? "放大" : "Zoom in";
+    public static string Minimap => Chinese ? "小地图" : "Minimap";
+    public static string UnknownIntent => Chinese ? "未知意图" : "Unknown intent";
     public static string GraphHelp => Chinese ? "滚轮缩放 · 拖动空白处平移 · 点击节点查看详情" : "Wheel to zoom · drag the background to pan · click a node for details";
     public static string LargeTreeHint(int shown, int total) => Chinese
         ? $"为保持流畅，当前显示 {shown}/{total} 个节点；完整记录未被合并。"

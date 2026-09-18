@@ -7,7 +7,9 @@ namespace HomuraLog.UI;
 /// <summary>A compact, independently laid out viewport over the current timeline neighborhood.</summary>
 internal sealed partial class TimelineMiniGraph : Control
 {
-    private const float MinReadableZoom = 0.72f;
+    private const float MinReadableZoom = 0.86f;
+    private const float NavigatorHeight = 92f;
+    private const float OverflowSliver = 2f;
     private const float FirstStepWidth = 160f;
     private const float RegularMaxWidth = 190f;
     private readonly List<HitArea> _hitAreas = [];
@@ -44,6 +46,7 @@ internal sealed partial class TimelineMiniGraph : Control
     internal int SmokeSelectedBranchIndex => _selectedBranchIndex;
     internal float SmokeZoom => _zoom;
     internal Vector2 SmokePan => _pan;
+    internal Rect2 SmokeContentViewport => ContentViewport;
 
     internal Vector2 SmokeNavigationCenter(string direction)
     {
@@ -126,6 +129,7 @@ internal sealed partial class TimelineMiniGraph : Control
         if (inputEvent is InputEventMouseButton wheel
             && wheel.Pressed && wheel.ButtonIndex is MouseButton.WheelUp or MouseButton.WheelDown)
         {
+            if (!ContentViewport.HasPoint(wheel.Position)) return;
             float oldZoom = _zoom;
             _zoom = Math.Clamp(_zoom * (wheel.ButtonIndex == MouseButton.WheelUp ? 1.12f : 0.89f), 0.55f, 1.6f);
             Vector2 worldAtCursor = (wheel.Position - _pan) / oldZoom;
@@ -138,6 +142,8 @@ internal sealed partial class TimelineMiniGraph : Control
         {
             if (button.Pressed)
             {
+                if (!ContentViewport.HasPoint(button.Position)
+                    && !BranchButtons().Any(candidate => candidate.Rect.HasPoint(button.Position))) return;
                 _panning = true;
                 _dragged = false;
                 _dragDistance = 0;
@@ -161,8 +167,12 @@ internal sealed partial class TimelineMiniGraph : Control
             }
             else
             {
-                Vector2 world = (motion.Position - _pan) / _zoom;
-                _hoveredItemId = _hitAreas.LastOrDefault(area => area.Rect.HasPoint(world))?.ItemId;
+                if (ContentViewport.HasPoint(motion.Position))
+                {
+                    Vector2 world = ScreenToWorld(motion.Position);
+                    _hoveredItemId = _hitAreas.LastOrDefault(area => area.Rect.HasPoint(world))?.ItemId;
+                }
+                else _hoveredItemId = null;
             }
             QueueRedraw();
             AcceptEvent();
@@ -183,6 +193,8 @@ internal sealed partial class TimelineMiniGraph : Control
             DrawEdge(byId[edge.FromItemId], byId[edge.ToItemId], edge.IsCurrentPath);
         foreach (CompactTimelineItem item in _layout.Items) DrawItem(item, theme);
         DrawSetTransform(Vector2.Zero, 0, Vector2.One);
+        DrawNavigationMask(theme);
+        DrawOverflowCues(theme);
         DrawBranchNavigator(theme);
         DrawHoverTooltip(theme);
     }
@@ -256,13 +268,21 @@ internal sealed partial class TimelineMiniGraph : Control
             : node.Outcome == TimelineOutcome.Victory ? new Color("62d69b")
             : node.Outcome == TimelineOutcome.Defeat ? new Color("e96b70")
             : node.IsOnCurrentPath ? new Color("70b7ed") : new Color("9a8fb5");
-        Color background = focused ? new Color("755522")
+        Color background = node.IsCurrent ? new Color("64461e")
             : selectedBranch ? new Color("233f58") : new Color(theme.Surface.Entry.Bg, 0.98f);
-        Color border = focused ? new Color("ffd166")
+        Color border = focused ? new Color("d9fbff")
             : selectedBranch ? new Color("70d7ff") : accent;
         DrawCard(rect, background, border, focused ? 4 : selectedBranch ? 3 : node.IsCurrent ? 2.5f : 1.5f);
+        if (focused)
+        {
+            Rect2 inner = rect.Grow(-4);
+            DrawCard(inner, new Color(0, 0, 0, 0), new Color("66d9ef"), 1);
+            Vector2 corner = rect.Position + new Vector2(9, 7);
+            DrawColoredPolygon([corner + new Vector2(0, -5), corner + new Vector2(5, 0),
+                corner + new Vector2(0, 5), corner + new Vector2(-5, 0)], new Color("d9fbff"));
+        }
         string fullText = RowText(row);
-        string prefix = node.IsCurrent ? "▶ " : "";
+        string prefix = node.IsCurrent ? "▶ " : focused ? "◇ " : "";
         Font textFont = focused || selectedBranch || _immediateNextNodeIds.Contains(node.NodeId)
             ? theme.Font.BodyBold : theme.Font.Body;
         if (focused || _immediateNextNodeIds.Contains(node.NodeId))
@@ -280,7 +300,12 @@ internal sealed partial class TimelineMiniGraph : Control
             DrawString(textFont, rect.Position + new Vector2(9, 22), shown,
                 HorizontalAlignment.Left, rect.Size.X - 18, 16, focused || selectedBranch ? Colors.White : accent);
         }
-        _hitAreas.Add(new HitArea(rect, item.Id, node.NodeId, null, fullText));
+        List<string> states = [];
+        if (focused) states.Add(HomuraText.FocusedNode);
+        if (node.IsCurrent) states.Add(HomuraText.PlayerPosition);
+        if (selectedBranch) states.Add(HomuraText.SelectedBranch);
+        string tooltip = states.Count == 0 ? fullText : $"{fullText} · {string.Join(" · ", states)}";
+        _hitAreas.Add(new HitArea(rect, item.Id, node.NodeId, null, tooltip));
     }
 
     private static float MeasureText(string text, Font font, int size) =>
@@ -326,7 +351,8 @@ internal sealed partial class TimelineMiniGraph : Control
             Navigate(branchButton.Direction);
             return;
         }
-        Vector2 world = (screenPosition - _pan) / _zoom;
+        if (!ContentViewport.HasPoint(screenPosition)) return;
+        Vector2 world = ScreenToWorld(screenPosition);
         HitArea? area = _hitAreas.LastOrDefault(candidate => candidate.Rect.HasPoint(world));
         if (area == null) return;
         if (area.NodeId != null)
@@ -363,6 +389,60 @@ internal sealed partial class TimelineMiniGraph : Control
             Rect2 label = new(Math.Max(6, Size.X - 225), 70, Math.Min(218, Size.X - 12), 20);
             DrawString(theme.Font.BodyBold, label.Position + new Vector2(0, 16), position,
                 HorizontalAlignment.Right, label.Size.X, 12, theme.Text.LabelSecondary);
+        }
+    }
+
+    private Rect2 ContentViewport => new(0, NavigatorHeight, Size.X, Math.Max(0, Size.Y - NavigatorHeight));
+
+    private Vector2 ScreenToWorld(Vector2 screen) => (screen - _pan) / _zoom;
+
+    private void DrawNavigationMask(RitsuShellTheme theme)
+    {
+        DrawRect(new Rect2(0, 0, Size.X, NavigatorHeight), new Color(theme.Surface.Inset.Bg, 1f), true);
+        DrawLine(new Vector2(0, NavigatorHeight - 1), new Vector2(Size.X, NavigatorHeight - 1),
+            new Color("53606d"), 1f);
+    }
+
+    private void DrawOverflowCues(RitsuShellTheme theme)
+    {
+        if (_layout == null || ContentViewport.Size.Y <= 0) return;
+        Rect2 visible = ContentViewport;
+        const float thickness = 18f;
+        CompactTimelineOverflow overflow = CompactTimelineLayout.Overflow(_layout.Bounds,
+            _pan.X, _pan.Y, _zoom, visible.Position.X, visible.Position.Y,
+            visible.End.X, visible.End.Y, OverflowSliver);
+        if (overflow.Left) DrawFade(visible, FadeEdge.Left, theme.Surface.Inset.Bg, thickness);
+        if (overflow.Right) DrawFade(visible, FadeEdge.Right, theme.Surface.Inset.Bg, thickness);
+        if (overflow.Top) DrawFade(visible, FadeEdge.Top, theme.Surface.Inset.Bg, thickness);
+        if (overflow.Bottom)
+        {
+            DrawFade(visible, FadeEdge.Bottom, theme.Surface.Inset.Bg, thickness);
+            string hint = HomuraText.DragForMore;
+            DrawString(theme.Font.BodyBold, new Vector2(8, visible.End.Y - 5), hint,
+                HorizontalAlignment.Center, visible.Size.X - 16, 12, theme.Text.LabelSecondary);
+        }
+    }
+
+    private void DrawFade(Rect2 viewport, FadeEdge edge, Color baseColor, float thickness)
+    {
+        const int bands = 6;
+        float band = thickness / bands;
+        for (int index = 0; index < bands; index++)
+        {
+            float alpha = 0.82f * (bands - index) / bands;
+            Color color = new(baseColor, alpha);
+            Rect2 rect = edge switch
+            {
+                FadeEdge.Left => new Rect2(viewport.Position.X + index * band, viewport.Position.Y,
+                    band + 0.5f, viewport.Size.Y),
+                FadeEdge.Right => new Rect2(viewport.End.X - (index + 1) * band, viewport.Position.Y,
+                    band + 0.5f, viewport.Size.Y),
+                FadeEdge.Top => new Rect2(viewport.Position.X, viewport.Position.Y + index * band,
+                    viewport.Size.X, band + 0.5f),
+                _ => new Rect2(viewport.Position.X, viewport.End.Y - (index + 1) * band,
+                    viewport.Size.X, band + 0.5f),
+            };
+            DrawRect(rect, color, true);
         }
     }
 
@@ -488,7 +568,7 @@ internal sealed partial class TimelineMiniGraph : Control
         Rect2 focus = FocusBounds(_layout);
         if (focus.Size == Vector2.Zero) return;
         Vector2 center = focus.GetCenter();
-        _pan = Size / 2 - center * _zoom;
+        _pan = ContentViewport.GetCenter() - center * _zoom;
         QueueRedraw();
     }
 
@@ -499,8 +579,8 @@ internal sealed partial class TimelineMiniGraph : Control
         Rect2 focus = FocusBounds(_layout);
         float left = _layout.Items.Min(item => item.X);
         float right = _layout.Items.Max(item => item.X + item.Width);
-        float fitWidth = (Size.X - 16) / Math.Max(1, right - left + 12);
-        float fitHeight = (Size.Y - 16) / Math.Max(1, focus.Size.Y);
+        float fitWidth = (ContentViewport.Size.X - 16) / Math.Max(1, right - left + 12);
+        float fitHeight = (ContentViewport.Size.Y - 16) / Math.Max(1, focus.Size.Y);
         return Math.Clamp(Math.Min(fitWidth, fitHeight), MinReadableZoom, 1f);
     }
 
@@ -606,4 +686,5 @@ internal sealed partial class TimelineMiniGraph : Control
     private sealed record HitArea(Rect2 Rect, string ItemId, string? NodeId, string? MoreBranchesNodeId, string FullText);
     private sealed record BranchButton(Rect2 Rect, string Label, NavigationDirection Direction);
     private enum NavigationDirection { Up, Down, Left, Right }
+    private enum FadeEdge { Left, Right, Top, Bottom }
 }

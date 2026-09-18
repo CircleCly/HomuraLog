@@ -17,7 +17,11 @@ public sealed record CompactTimelineLayoutResult(
     IReadOnlyList<CompactTimelineEdge> Edges,
     float Width,
     float Height,
-    string? CurrentItemId);
+    string? CurrentItemId,
+    CompactTimelineBounds Bounds);
+
+public sealed record CompactTimelineBounds(float Left, float Top, float Right, float Bottom);
+public sealed record CompactTimelineOverflow(bool Left, bool Top, bool Right, bool Bottom);
 
 /// <summary>
 /// Packs the mini projection into a center spine and two side lanes. The layout is
@@ -32,6 +36,15 @@ public static class CompactTimelineLayout
     private const float PreferredFanoutWidth = 520f;
     private const float SideIndent = 8f;
     private const float Margin = 6f;
+
+    public static CompactTimelineOverflow Overflow(CompactTimelineBounds bounds,
+        float panX, float panY, float zoom,
+        float viewportLeft, float viewportTop, float viewportRight, float viewportBottom,
+        float tolerance = 2f) => new(
+        panX + bounds.Left * zoom < viewportLeft - tolerance,
+        panY + bounds.Top * zoom < viewportTop - tolerance,
+        panX + bounds.Right * zoom > viewportRight + tolerance,
+        panY + bounds.Bottom * zoom > viewportBottom + tolerance);
 
     public static CompactTimelineLayoutResult Create(
         MiniTimelineSegment root,
@@ -91,7 +104,9 @@ public static class CompactTimelineLayout
 
         string? currentId = normalized.FirstOrDefault(item => item.Row?.IsFocused == true)?.Id;
         return new CompactTimelineLayoutResult(normalized, edges,
-            maxX - minX + Margin * 2, maxY - minY + Margin * 2, currentId);
+            maxX - minX + Margin * 2, maxY - minY + Margin * 2, currentId,
+            new CompactTimelineBounds(Margin, Margin,
+                maxX - minX + Margin, maxY - minY + Margin));
 
         SegmentMetrics Measure(MiniTimelineSegment segment)
         {

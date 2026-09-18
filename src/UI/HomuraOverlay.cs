@@ -37,6 +37,9 @@ internal sealed partial class HomuraOverlay : CanvasLayer
     private double _combatWatchdogRefresh;
     private bool _hiddenForPause;
     private bool _hiddenForCombatModal;
+    private bool _miniSuppressedForLarge;
+    private bool _miniVisibleBeforeLarge;
+    private bool _inspectorVisibleBeforeLarge;
     private Vector2 _expandedSize = new(440, 360);
     private string _lastLanguage = "";
     private bool _smokeSuppressJump;
@@ -103,9 +106,14 @@ internal sealed partial class HomuraOverlay : CanvasLayer
         SetProcess(true);
         SetProcessInput(true);
         WorldlineReplayController.StatusChanged += OnReplayStatus;
+        WorldlineReplayController.BusyChanged += RefreshActionAvailability;
     }
 
-    public override void _ExitTree() => WorldlineReplayController.StatusChanged -= OnReplayStatus;
+    public override void _ExitTree()
+    {
+        WorldlineReplayController.StatusChanged -= OnReplayStatus;
+        WorldlineReplayController.BusyChanged -= RefreshActionAvailability;
+    }
 
     public void Bind(TimelineSession session)
     {
@@ -189,7 +197,8 @@ internal sealed partial class HomuraOverlay : CanvasLayer
         _selectedMiniNodeId = node.NodeId;
         if (_miniInspector != null) _miniInspector.Visible = true;
         if (_miniJump != null)
-            _miniJump.Disabled = node.Action == null || node.NodeId == _snapshot.CurrentNodeId;
+            ApplyButtonAvailability(_miniJump,
+                TimelineActionAvailability.Evaluate(_snapshot, node, WorldlineReplayController.IsBusy));
         string action = node.Action == null ? HomuraText.Root : ActionText(node.Action);
         string context = $"{action}\n{HomuraText.Visits(node.Visits)}";
         if (node.State == null)
@@ -304,25 +313,31 @@ internal sealed partial class HomuraOverlay : CanvasLayer
     private static string FormatRichDetails(CombatStateSummary state, bool useLiveIntent = false)
     {
         string enemies = string.Join("\n", state.Enemies.Select(enemy =>
-            $"  {LocalizedModelNames.Monster(enemy.ModelId)} {enemy.Hp}/{enemy.MaxHp}" + (enemy.Block > 0 ? $" (+{enemy.Block})" : "")
-            + (string.IsNullOrWhiteSpace(IntentForDisplay(enemy, useLiveIntent)) ? "" : $" · {HomuraText.Intent}: {IntentForDisplay(enemy, useLiveIntent)}")));
+        {
+            string header = $"  {LocalizedModelNames.Monster(enemy.ModelId)} {enemy.Hp}/{enemy.MaxHp}"
+                + (enemy.Block > 0 ? $" (+{enemy.Block})" : "");
+            IReadOnlyList<string> intents = IntentsForDisplay(enemy, useLiveIntent);
+            return intents.Count == 0 ? header : header + "\n"
+                + string.Join('\n', intents.Select(intent => $"    {HomuraText.Intent}: {intent}"));
+        }));
         return $"{HomuraText.Details}: T{state.Turn} · {HomuraText.Hp} {state.PlayerHp}/{state.PlayerMaxHp} · " +
             $"{HomuraText.Block} {state.PlayerBlock} · {HomuraText.Energy} {state.Energy}\n{HomuraText.EnemyHp}:\n{enemies}";
     }
 
-    private static string IntentForDisplay(CreatureState recorded, bool useLiveIntent)
+    private static IReadOnlyList<string> IntentsForDisplay(CreatureState recorded, bool useLiveIntent)
     {
         if (!useLiveIntent || !recorded.CombatId.HasValue)
-            return LocalizedIntent.Format(recorded);
+            return LocalizedIntent.FormatLines(recorded);
         try
         {
             var combat = CombatManager.Instance.DebugOnlyGetState();
             var enemy = combat?.Enemies.FirstOrDefault(candidate => candidate.CombatId == recorded.CombatId.Value);
-            if (enemy?.Monster == null) return LocalizedIntent.Format(recorded);
-            return string.Join(" + ", enemy.Monster.NextMove.Intents.Select(intent =>
-                RichText.ToPlainText(intent.GetIntentLabel(combat!.Allies, enemy).GetFormattedText()).Trim()));
+            if (enemy?.Monster == null) return LocalizedIntent.FormatLines(recorded);
+            return enemy.Monster.NextMove.Intents.Select(intent =>
+                RichText.ToPlainText(intent.GetIntentLabel(combat!.Allies, enemy).GetFormattedText()).Trim())
+                .Where(text => !string.IsNullOrWhiteSpace(text)).ToArray();
         }
-        catch { return LocalizedIntent.Format(recorded); }
+        catch { return LocalizedIntent.FormatLines(recorded); }
     }
 
     private void ShowFullGraph()
@@ -331,6 +346,7 @@ internal sealed partial class HomuraOverlay : CanvasLayer
     private void ShowFullGraphAt(string? focusNodeId)
     {
         if (_snapshot == null) return;
+        SuppressMiniForLarge();
         if (focusNodeId != null) SetSharedFocus(focusNodeId, FocusSource.External);
         string target = _focus.FocusedNodeId ?? _snapshot.CurrentNodeId;
         if (_graphWindow != null && GodotObject.IsInstanceValid(_graphWindow) && _graphWindow.IsAvailable)
@@ -353,6 +369,7 @@ internal sealed partial class HomuraOverlay : CanvasLayer
         created.Closed += () =>
         {
             if (ReferenceEquals(_graphWindow, created)) _graphWindow = null;
+            RestoreMiniAfterLarge();
         };
         _graphWindow = created;
         AddChild(created);
@@ -418,6 +435,10 @@ internal sealed partial class HomuraOverlay : CanvasLayer
         Directory.CreateDirectory(outputDirectory);
 
         await WaitForUiFrames(3);
+        RecordVisualSmokeResult((_miniGraph?.SmokeZoom ?? 0) >= 0.86f,
+            "mini-readable-auto-zoom");
+        RecordVisualSmokeResult((_miniGraph?.SmokeContentViewport.Position.Y ?? 0) >= 92f,
+            "mini-navigation-safe-area");
         await CaptureViewport(outputDirectory, "01-mini-current.png");
 
         TimelineNodeSnapshot? alternate = FlattenNodes(_snapshot.Root)
@@ -457,6 +478,9 @@ internal sealed partial class HomuraOverlay : CanvasLayer
         ShowFullGraph();
         await WaitForUiFrames(4);
         _graphWindow?.RunLargeWindowSmokeCheck();
+        RecordVisualSmokeResult(_panel?.Visible == false, "large-hides-mini");
+        RecordVisualSmokeResult(_graphWindow?.SmokeBuiltInToolbarHidden == true,
+            "large-built-in-toolbar-hidden");
         bool sharedFocusOpened = _graphWindow?.SmokeSelectedNodeId == _focus.FocusedNodeId
             && _miniGraph?.SmokeFocusedNodeId == _focus.FocusedNodeId;
         RecordVisualSmokeResult(sharedFocusOpened, "shared-focus-open-large");
@@ -474,6 +498,7 @@ internal sealed partial class HomuraOverlay : CanvasLayer
 
         CloseGraphWindow();
         await WaitForUiFrames(2);
+        RecordVisualSmokeResult(_panel?.Visible == true, "large-close-restores-mini");
         bool miniResetWorked = _focus.FocusedNodeId == _snapshot.CurrentNodeId
             && _miniGraph?.SmokeFocusedNodeId == _snapshot.CurrentNodeId;
         RecordVisualSmokeResult(miniResetWorked, "mini-reset-view-state");
@@ -935,6 +960,28 @@ internal sealed partial class HomuraOverlay : CanvasLayer
         if (graph != null && GodotObject.IsInstanceValid(graph)) graph.QueueFree();
     }
 
+    private void SuppressMiniForLarge()
+    {
+        if (_miniSuppressedForLarge) return;
+        _miniSuppressedForLarge = true;
+        _miniVisibleBeforeLarge = _panel?.Visible == true;
+        _inspectorVisibleBeforeLarge = _miniInspector?.Visible == true;
+        if (_panel != null) _panel.Visible = false;
+        if (_miniInspector != null && GodotObject.IsInstanceValid(_miniInspector))
+            _miniInspector.Visible = false;
+    }
+
+    private void RestoreMiniAfterLarge()
+    {
+        if (!_miniSuppressedForLarge) return;
+        _miniSuppressedForLarge = false;
+        bool canShow = _session != null && CombatManager.Instance.IsInProgress
+            && !_hiddenForPause && !_hiddenForCombatModal;
+        if (_panel != null) _panel.Visible = canShow && _miniVisibleBeforeLarge;
+        if (_miniInspector != null && GodotObject.IsInstanceValid(_miniInspector))
+            _miniInspector.Visible = canShow && _inspectorVisibleBeforeLarge;
+    }
+
     private void SubmitWorldlineJump(string nodeId, string source)
     {
         TimelineSession? session = _session;
@@ -949,6 +996,7 @@ internal sealed partial class HomuraOverlay : CanvasLayer
         }
         string mode = session.TryGetForwardPath(nodeId, out _) ? "forward" : "reload";
         Entry.Logger.Info($"Worldline jump submitted source={source} mode={mode} node={nodeId}.");
+        _miniSuppressedForLarge = false;
         CloseGraphWindow();
         DestroyMiniInspector();
         WorldlineReplayController.Request(session, nodeId);
@@ -964,6 +1012,23 @@ internal sealed partial class HomuraOverlay : CanvasLayer
     private void OnReplayStatus(string message)
     {
         if (_status != null) _status.Text = message;
+        RefreshActionAvailability();
+    }
+
+    private void RefreshActionAvailability()
+    {
+        if (_snapshot != null && _selectedMiniNodeId != null && _miniJump != null)
+            ApplyButtonAvailability(_miniJump, TimelineActionAvailability.Evaluate(_snapshot,
+                FindNode(_snapshot.Root, _selectedMiniNodeId), WorldlineReplayController.IsBusy));
+        if (_graphWindow != null && GodotObject.IsInstanceValid(_graphWindow) && _graphWindow.IsAvailable)
+            _graphWindow.RefreshActionAvailability();
+    }
+
+    private static void ApplyButtonAvailability(Button button, TimelineActionAvailability availability)
+    {
+        button.Disabled = !availability.JumpEnabled;
+        button.TooltipText = availability.JumpReason;
+        button.AddThemeColorOverride("font_disabled_color", new Color("9facb9"));
     }
 
     private static string OutcomeText(TimelineOutcome outcome) => outcome switch
@@ -1015,9 +1080,9 @@ internal sealed partial class HomuraOverlay : CanvasLayer
             _hiddenForPause = paused;
             _hiddenForCombatModal = combatModal;
             bool show = !paused && !combatModal;
-            if (_panel != null) _panel.Visible = show;
+            if (_panel != null) _panel.Visible = show && !_miniSuppressedForLarge;
             if (_miniInspector != null && GodotObject.IsInstanceValid(_miniInspector))
-                _miniInspector.Visible = show;
+                _miniInspector.Visible = show && !_miniSuppressedForLarge;
             if (_graphWindow != null && GodotObject.IsInstanceValid(_graphWindow) && _graphWindow.IsAvailable)
                 _graphWindow.Visible = show;
             if (show && _selectedMiniNodeId != null && _miniInspector != null)

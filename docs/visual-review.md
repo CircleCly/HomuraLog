@@ -18,17 +18,21 @@ Evidence is stored under `%APPDATA%\SlayTheSpire2\HomuraLog\visual-smoke`. The 2
 - The backed-up destructive pass executed a real forward replay from the compact jump button, reached the exact child node, deleted a real off-path subtree through the large-view button, then restored the user's timeline and native run saves.
 - Localized enemy intent is converted to plain text before entering ordinary labels, so Godot tags such as `[font_size]` no longer leak into node details.
 
-## Usability issues found
+## Usability improvements verified
 
-- At 1280×720, compact branch text is technically readable but near the comfortable size limit.
-- When content continues below the compact viewport, there is no edge fade, scrollbar, or persistent cue that the canvas can be dragged.
-- Focus gold and current-position orange are close in hue; without prior explanation, their different meanings are not self-evident.
-- Opening the large view leaves the compact window visible, duplicating information and consuming additional screen space.
-- Disabled jump/delete buttons do not explain why the action is unavailable.
-- The large graph exposes several unlabeled built-in GraphEdit toolbar icons.
-- Recorded intent variables can wrap poorly (`Strategic + Strategic` followed by `5` on a separate line) and remain less understandable than the game's native intent presentation.
-- Other mods can draw transient hints across HomuraLog windows. HomuraLog stays functional, but the combined screen can be visually noisy.
-- Zoomed or dragged compact graph content can move underneath the fixed branch navigator; the controls remain functional, but the overlap makes both layers harder to read.
+- Compact automatic framing now preserves a readable minimum zoom at 1280×720 and lets overflow remain pannable.
+- Edge fades and a localized drag cue identify compact content outside the viewport.
+- The compact navigator has an opaque safe area; panned graph content is masked and cannot be clicked through it.
+- Focus uses a cyan-white double outline and diamond marker, while the actual player position retains its orange fill and arrow marker. Both states remain visible when they coincide.
+- Opening the large graph temporarily hides the compact window; closing it restores the prior compact visibility state.
+- Jump and delete buttons share availability rules and localized explanations for their disabled states.
+- The built-in GraphEdit toolbar is hidden and replaced by localized zoom, minimap, and Reset View controls.
+- Recorded intents render one structured intent per line instead of joining unrelated intent variables with plus signs.
+- The large inspector uses a more solid backing so text remains legible over the combat scene.
+
+## Remaining external limitation
+
+- Other mods can still draw high-layer transient hints across HomuraLog windows. HomuraLog cannot safely reorder or hide third-party CanvasLayers; stronger local backplates reduce, but cannot eliminate, that visual noise.
 
 ## Hardware verification limit
 

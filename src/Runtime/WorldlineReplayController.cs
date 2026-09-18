@@ -29,6 +29,8 @@ internal static class WorldlineReplayController
     private static bool _busy;
 
     public static event Action<string>? StatusChanged;
+    public static event Action? BusyChanged;
+    public static bool IsBusy => _busy;
 
     public static void Request(TimelineSession session, string nodeId)
     {
@@ -39,7 +41,7 @@ internal static class WorldlineReplayController
         }
         if (session.TryGetForwardPath(nodeId, out IReadOnlyList<TimelineAction> forwardPath))
         {
-            _busy = true;
+            SetBusy(true);
             StatusChanged?.Invoke(HomuraText.Forwarding(forwardPath.Count));
             TaskHelper.RunSafely(ReplayFromCurrentAsync(session, nodeId, forwardPath));
             return;
@@ -50,7 +52,7 @@ internal static class WorldlineReplayController
             return;
         }
         _pending = new ReplayRequest(session.Snapshot.EncounterKey, nodeId, path);
-        _busy = true;
+        SetBusy(true);
         session.Abort();
         StatusChanged?.Invoke($"Reloading combat entry · {path.Count} recorded steps");
         TaskHelper.RunSafely(ReloadRunAsync());
@@ -120,7 +122,7 @@ internal static class WorldlineReplayController
             StatusChanged?.Invoke($"Reached worldline node {request.NodeId[..Math.Min(8, request.NodeId.Length)]}.");
             Entry.Logger.Info($"Worldline replay completed node={request.NodeId} actions={executed}.");
             _pending = null;
-            _busy = false;
+            SetBusy(false);
         }
         catch (Exception error)
         {
@@ -148,7 +150,7 @@ internal static class WorldlineReplayController
         }
         finally
         {
-            _busy = false;
+            SetBusy(false);
         }
     }
 
@@ -294,7 +296,14 @@ internal static class WorldlineReplayController
     {
         StatusChanged?.Invoke(message);
         _pending = null;
-        _busy = false;
+        SetBusy(false);
+    }
+
+    private static void SetBusy(bool value)
+    {
+        if (_busy == value) return;
+        _busy = value;
+        BusyChanged?.Invoke();
     }
 
     private sealed class ReplayCardSelector(Queue<TimelineAction> choices, TimelineSession session) : ICardSelector

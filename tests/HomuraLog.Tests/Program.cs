@@ -202,6 +202,17 @@ CompactTimelineLayoutResult compactFanout = CompactTimelineLayout.Create(
     fanoutProjection.Root, _ => 180, _ => 180);
 Assert(compactFanout.CurrentItemId != null, "Compact layout must identify the current action.");
 Assert(compactFanout.Edges.Count > 0, "Compact layout must generate arrows after placing nodes.");
+Assert(compactFanout.Bounds.Right > compactFanout.Bounds.Left
+    && compactFanout.Bounds.Bottom > compactFanout.Bounds.Top,
+    "Compact layout must expose its content bounds for viewport cues.");
+CompactTimelineOverflow clippedOverflow = CompactTimelineLayout.Overflow(compactFanout.Bounds,
+    -200, -100, 1, 0, 92, 440, 360);
+Assert(clippedOverflow.Left && clippedOverflow.Top,
+    "Panned compact content must report the clipped edges that need visual cues.");
+CompactTimelineOverflow visibleOverflow = CompactTimelineLayout.Overflow(
+    new CompactTimelineBounds(0, 92, 440, 360), 0, 0, 1, 0, 92, 440, 360);
+Assert(!visibleOverflow.Left && !visibleOverflow.Top && !visibleOverflow.Right && !visibleOverflow.Bottom,
+    "Fully visible compact content must not show overflow cues.");
 CompactTimelineItem[] compactItems = compactFanout.Items.ToArray();
 for (int left = 0; left < compactItems.Length; left++)
 for (int right = left + 1; right < compactItems.Length; right++)

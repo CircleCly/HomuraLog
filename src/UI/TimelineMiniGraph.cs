@@ -265,7 +265,7 @@ internal sealed partial class TimelineMiniGraph : Control
         BranchButton? branchButton = BranchButtons().FirstOrDefault(button => button.Rect.HasPoint(screenPosition));
         if (branchButton != null)
         {
-            SelectAdjacentBranch(branchButton.Delta);
+            Navigate(branchButton.Direction);
             return;
         }
         Vector2 world = (screenPosition - _pan) / _zoom;
@@ -283,56 +283,97 @@ internal sealed partial class TimelineMiniGraph : Control
 
     private void DrawBranchNavigator(RitsuShellTheme theme)
     {
-        IReadOnlyList<TimelineNodeSnapshot> branches = CurrentBranches();
-        if (branches.Count <= 1) return;
+        if (_snapshot == null || _selectedNodeId == null) return;
+        TimelineNodeSnapshot? selected = Find(_snapshot.Root, _selectedNodeId);
+        if (selected == null) return;
         foreach (BranchButton button in BranchButtons())
         {
-            DrawCard(button.Rect, new Color(theme.Surface.Entry.Bg, 0.98f), new Color("70b7ed"), 1.5f);
+            bool enabled = CanNavigate(button.Direction, selected);
+            Color border = enabled ? new Color("70b7ed") : new Color("53606d");
+            Color text = enabled ? theme.Text.LabelPrimary : theme.Text.LabelSecondary;
+            DrawCard(button.Rect, new Color(theme.Surface.Entry.Bg, enabled ? 0.98f : 0.72f), border, 1.5f);
             DrawString(theme.Font.BodyBold, button.Rect.Position + new Vector2(0, 20), button.Label,
-                HorizontalAlignment.Center, button.Rect.Size.X, 16, theme.Text.LabelPrimary);
+                HorizontalAlignment.Center, button.Rect.Size.X, 16, text);
         }
-        int index = Math.Max(0, branches.ToList().FindIndex(branch =>
-            branch.NodeId == (_preferredNextNodeId ?? _selectedNodeId)));
-        string position = $"{index + 1}/{branches.Count}";
-        Rect2 label = new(Size.X - 75, 37, 67, 22);
-        DrawString(theme.Font.BodyBold, label.Position + new Vector2(0, 17), position,
-            HorizontalAlignment.Center, label.Size.X, 13, theme.Text.LabelSecondary);
+        TimelineNodeSnapshot? parent = FindParent(_snapshot.Root, selected.NodeId);
+        IReadOnlyList<TimelineNodeSnapshot> siblings = parent == null ? [] : OrderedChildren(parent);
+        if (siblings.Count > 1)
+        {
+            int index = siblings.ToList().FindIndex(node => node.NodeId == selected.NodeId);
+            string position = $"{index + 1}/{siblings.Count}";
+            Rect2 label = new(Size.X - 103, 70, 96, 20);
+            DrawString(theme.Font.BodyBold, label.Position + new Vector2(0, 16), position,
+                HorizontalAlignment.Center, label.Size.X, 13, theme.Text.LabelSecondary);
+        }
     }
 
     private IReadOnlyList<BranchButton> BranchButtons()
     {
-        float x = Size.X - 69;
+        float x = Size.X - 103;
         return
         [
-            new BranchButton(new Rect2(x, 7, 28, 28), "←", -1),
-            new BranchButton(new Rect2(x + 34, 7, 28, 28), "→", 1),
-            new BranchButton(new Rect2(x, 61, 28, 28), "↑", -1),
-            new BranchButton(new Rect2(x + 34, 61, 28, 28), "↓", 1),
+            new BranchButton(new Rect2(x + 34, 5, 28, 28), "↑", NavigationDirection.Up),
+            new BranchButton(new Rect2(x, 37, 28, 28), "←", NavigationDirection.Left),
+            new BranchButton(new Rect2(x + 34, 37, 28, 28), "↓", NavigationDirection.Down),
+            new BranchButton(new Rect2(x + 68, 37, 28, 28), "→", NavigationDirection.Right),
         ];
     }
 
-    private IReadOnlyList<TimelineNodeSnapshot> CurrentBranches()
+    private bool CanNavigate(NavigationDirection direction, TimelineNodeSnapshot selected)
     {
-        TimelineNodeSnapshot? current = _snapshot == null ? null : Find(_snapshot.Root, _snapshot.CurrentNodeId);
-        return current?.Children.OrderByDescending(child => child.LastVisitedAt).ToArray()
-            ?? Array.Empty<TimelineNodeSnapshot>();
+        if (_snapshot == null) return false;
+        TimelineNodeSnapshot? parent = FindParent(_snapshot.Root, selected.NodeId);
+        return direction switch
+        {
+            NavigationDirection.Up => parent != null,
+            NavigationDirection.Down => selected.Children.Count > 0,
+            NavigationDirection.Left or NavigationDirection.Right =>
+                (parent != null && parent.Children.Count > 1) || selected.Children.Count > 1,
+            _ => false,
+        };
     }
 
-    private void SelectAdjacentBranch(int delta)
+    private void Navigate(NavigationDirection direction)
     {
-        IReadOnlyList<TimelineNodeSnapshot> branches = CurrentBranches();
-        if (branches.Count <= 1) return;
-        int index = branches.ToList().FindIndex(branch =>
-            branch.NodeId == (_preferredNextNodeId ?? _selectedNodeId));
-        if (index < 0) index = delta > 0 ? -1 : 0;
-        index = (index + delta + branches.Count) % branches.Count;
-        _preferredNextNodeId = branches[index].NodeId;
-        _selectedNodeId = _preferredNextNodeId;
+        if (_snapshot == null || _selectedNodeId == null) return;
+        TimelineNodeSnapshot? selected = Find(_snapshot.Root, _selectedNodeId);
+        if (selected == null || !CanNavigate(direction, selected)) return;
+        TimelineNodeSnapshot? target = null;
+        TimelineNodeSnapshot? parent = FindParent(_snapshot.Root, selected.NodeId);
+        if (direction == NavigationDirection.Up) target = parent;
+        else if (direction == NavigationDirection.Down)
+            target = OrderedChildren(selected).FirstOrDefault();
+        else
+        {
+            IReadOnlyList<TimelineNodeSnapshot> siblings;
+            int index;
+            if (parent != null && parent.Children.Count > 1)
+            {
+                siblings = OrderedChildren(parent);
+                index = siblings.ToList().FindIndex(node => node.NodeId == selected.NodeId);
+            }
+            else
+            {
+                siblings = OrderedChildren(selected);
+                index = direction == NavigationDirection.Right ? -1 : 0;
+            }
+            int delta = direction == NavigationDirection.Left ? -1 : 1;
+            target = siblings[(index + delta + siblings.Count) % siblings.Count];
+        }
+        if (target == null) return;
+        _selectedNodeId = target.NodeId;
+        TimelineNodeSnapshot? current = Find(_snapshot.Root, _snapshot.CurrentNodeId);
+        _preferredNextNodeId = current?.Children.Any(child => child.NodeId == target.NodeId) == true
+            ? target.NodeId : null;
         _layout = null;
         ResetToCurrent();
         NodeActivated?.Invoke(_selectedNodeId);
         QueueRedraw();
     }
+
+    private static IReadOnlyList<TimelineNodeSnapshot> OrderedChildren(TimelineNodeSnapshot node) =>
+        node.Children.OrderByDescending(child => child.IsOnCurrentPath)
+            .ThenByDescending(child => child.LastVisitedAt).ToArray();
 
     private void DrawHoverTooltip(RitsuShellTheme theme)
     {
@@ -389,6 +430,17 @@ internal sealed partial class TimelineMiniGraph : Control
         foreach (TimelineNodeSnapshot child in node.Children)
         {
             TimelineNodeSnapshot? found = Find(child, nodeId);
+            if (found != null) return found;
+        }
+        return null;
+    }
+
+    private static TimelineNodeSnapshot? FindParent(TimelineNodeSnapshot node, string nodeId)
+    {
+        if (node.Children.Any(child => child.NodeId == nodeId)) return node;
+        foreach (TimelineNodeSnapshot child in node.Children)
+        {
+            TimelineNodeSnapshot? found = FindParent(child, nodeId);
             if (found != null) return found;
         }
         return null;
@@ -462,5 +514,6 @@ internal sealed partial class TimelineMiniGraph : Control
     }
 
     private sealed record HitArea(Rect2 Rect, string ItemId, string? NodeId, string? MoreBranchesNodeId, string FullText);
-    private sealed record BranchButton(Rect2 Rect, string Label, int Delta);
+    private sealed record BranchButton(Rect2 Rect, string Label, NavigationDirection Direction);
+    private enum NavigationDirection { Up, Down, Left, Right }
 }

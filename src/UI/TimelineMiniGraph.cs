@@ -10,6 +10,7 @@ internal sealed partial class TimelineMiniGraph : Control
     private const float NodeWidth = 320f;
     private const float RowHeight = 34f;
     private readonly List<(Rect2 Rect, string NodeId)> _hitAreas = [];
+    private readonly List<(Rect2 Rect, string NodeId)> _moreBranchHitAreas = [];
     private TimelineSnapshot? _snapshot;
     private string? _selectedNodeId;
     private string? _lastCurrentNodeId;
@@ -27,6 +28,7 @@ internal sealed partial class TimelineMiniGraph : Control
     }
 
     public event Action<string>? NodeActivated;
+    public event Action<string>? MoreBranchesActivated;
 
     public void ResetToCurrent() => CenterCurrent();
 
@@ -80,6 +82,12 @@ internal sealed partial class TimelineMiniGraph : Control
                         QueueRedraw();
                         break;
                     }
+                    for (int index = _moreBranchHitAreas.Count - 1; index >= 0; index--)
+                    {
+                        if (!_moreBranchHitAreas[index].Rect.HasPoint(world)) continue;
+                        MoreBranchesActivated?.Invoke(_moreBranchHitAreas[index].NodeId);
+                        break;
+                    }
                 }
             }
             AcceptEvent();
@@ -96,58 +104,68 @@ internal sealed partial class TimelineMiniGraph : Control
     public override void _Draw()
     {
         _hitAreas.Clear();
+        _moreBranchHitAreas.Clear();
         RitsuShellTheme theme = RitsuShellTheme.Current;
         DrawRect(new Rect2(Vector2.Zero, Size), new Color(theme.Surface.Inset.Bg, 0.98f), true);
         if (_snapshot == null) return;
 
-        GraphSegment root = BuildSegments(_snapshot.Root);
-        List<GraphSegment> segments = Flatten(root).ToList();
+        MiniTimelineSegment root = MiniTimelineProjector.Create(_snapshot);
+        List<MiniTimelineSegment> segments = Flatten(root).ToList();
         Dictionary<string, Vector2> positions = Layout(root);
         DrawSetTransform(_pan, 0, Vector2.One * _zoom);
-        foreach (GraphSegment parent in segments)
-        foreach (GraphSegment child in parent.Children)
+        foreach (MiniTimelineSegment parent in segments)
+        foreach (MiniTimelineSegment child in parent.Children)
         {
             Rect2 from = SegmentRect(parent, positions[parent.Id]);
             Rect2 to = SegmentRect(child, positions[child.Id]);
             Vector2 start = new(from.GetCenter().X, from.End.Y);
             Vector2 end = new(to.GetCenter().X, to.Position.Y);
             float middle = (start.Y + end.Y) / 2;
-            bool currentPath = child.Nodes.Any(node => node.IsOnCurrentPath);
+            bool currentPath = child.Rows.Any(row => row.Node?.IsOnCurrentPath == true);
             Color line = currentPath ? new Color("70b7ed") : new Color("71859a");
             DrawPolyline([start, new Vector2(start.X, middle), new Vector2(end.X, middle), end],
                 line, currentPath ? 4 : 2.5f, true);
             DrawColoredPolygon([end, end + new Vector2(-8, -14), end + new Vector2(8, -14)], line);
         }
-        foreach (GraphSegment segment in segments) DrawSegment(segment, positions[segment.Id], theme);
+        foreach (MiniTimelineSegment segment in segments) DrawSegment(segment, positions[segment.Id], theme);
         DrawSetTransform(Vector2.Zero, 0, Vector2.One);
 
         DrawString(theme.Font.Body, new Vector2(12, Size.Y - 10), HomuraText.GraphHelp,
             HorizontalAlignment.Left, Size.X - 24, 12, new Color(theme.Text.LabelSecondary, 0.85f));
     }
 
-    private void DrawSegment(GraphSegment segment, Vector2 position, RitsuShellTheme theme)
+    private void DrawSegment(MiniTimelineSegment segment, Vector2 position, RitsuShellTheme theme)
     {
         Rect2 rect = SegmentRect(segment, position);
-        TimelineNodeSnapshot tail = segment.Nodes[^1];
-        bool current = segment.Nodes.Any(node => node.IsCurrent);
-        bool currentPath = segment.Nodes.Any(node => node.IsOnCurrentPath);
+        TimelineNodeSnapshot? tail = segment.Rows.LastOrDefault(row => row.Node != null)?.Node;
+        bool current = segment.Rows.Any(row => row.Node?.IsCurrent == true);
+        bool currentPath = segment.Rows.Any(row => row.Node?.IsOnCurrentPath == true);
         Color accent = current ? new Color("f4b860")
-            : tail.Outcome == TimelineOutcome.Victory ? new Color("62d69b")
-            : tail.Outcome == TimelineOutcome.Defeat ? new Color("e96b70")
+            : tail?.Outcome == TimelineOutcome.Victory ? new Color("62d69b")
+            : tail?.Outcome == TimelineOutcome.Defeat ? new Color("e96b70")
             : currentPath ? new Color("70b7ed") : new Color("9a8fb5");
         DrawCard(rect, new Color(theme.Surface.Entry.Bg, 0.98f), accent, current ? 4 : 2);
 
         Font body = theme.Font.Body;
         Font bold = theme.Font.BodyBold;
-        string title = segment.Nodes[0].Action == null ? HomuraText.Root
-            : segment.Nodes.Count == 1 ? HomuraText.Decision : $"{segment.Nodes.Count} {HomuraText.Decision}";
+        TimelineNodeSnapshot? firstNode = segment.Rows.FirstOrDefault(row => row.Node != null)?.Node;
+        int actualRows = segment.Rows.Count(row => row.Node != null);
+        string title = firstNode?.Action == null ? HomuraText.Root
+            : actualRows == 1 ? HomuraText.Decision : $"{actualRows} {HomuraText.Decision}";
         DrawString(bold, rect.Position + new Vector2(12, 23), title,
             HorizontalAlignment.Left, rect.Size.X - 24, 16, accent);
-        for (int index = 0; index < segment.Nodes.Count; index++)
+        for (int index = 0; index < segment.Rows.Count; index++)
         {
-            TimelineNodeSnapshot node = segment.Nodes[index];
+            MiniTimelineRow projectionRow = segment.Rows[index];
             Rect2 row = new(rect.Position + new Vector2(8, 31 + index * RowHeight),
                 new Vector2(rect.Size.X - 16, RowHeight - 3));
+            if (projectionRow.IsOmission)
+            {
+                DrawString(body, row.Position + new Vector2(9, 22), HomuraText.OmittedActions(projectionRow.OmittedCount),
+                    HorizontalAlignment.Center, row.Size.X - 18, 13, theme.Text.LabelSecondary);
+                continue;
+            }
+            TimelineNodeSnapshot node = projectionRow.Node!;
             bool selected = node.NodeId == _selectedNodeId;
             if (selected) DrawCard(row, new Color("755522"), new Color("ffd166"), 4);
             string text = node.Action == null ? HomuraText.Root : HomuraOverlay.ActionText(node.Action);
@@ -158,16 +176,25 @@ internal sealed partial class TimelineMiniGraph : Control
                     : node.IsOnCurrentPath ? new Color("70b7ed") : theme.Text.LabelPrimary);
             _hitAreas.Add((row, node.NodeId));
         }
-        DrawString(body, rect.End - new Vector2(rect.Size.X - 12, 10), HomuraText.Visits(tail.Visits),
-            HorizontalAlignment.Left, rect.Size.X - 24, 12, theme.Text.LabelSecondary);
+        if (segment.HiddenBranchCount > 0)
+        {
+            Rect2 more = new(rect.Position + new Vector2(8, 34 + segment.Rows.Count * RowHeight),
+                new Vector2(rect.Size.X - 16, 28));
+            DrawString(bold, more.Position + new Vector2(8, 20), HomuraText.MoreBranches(segment.HiddenBranchCount),
+                HorizontalAlignment.Center, more.Size.X - 16, 13, new Color("70b7ed"));
+            _moreBranchHitAreas.Add((more, segment.MoreBranchesNodeId));
+        }
+        else if (tail != null)
+            DrawString(body, rect.End - new Vector2(rect.Size.X - 12, 10), HomuraText.Visits(tail.Visits),
+                HorizontalAlignment.Left, rect.Size.X - 24, 12, theme.Text.LabelSecondary);
     }
 
     private void CenterCurrent()
     {
         if (_snapshot == null || Size.X <= 0 || Size.Y <= 0) return;
-        GraphSegment root = BuildSegments(_snapshot.Root);
-        GraphSegment? current = Flatten(root).FirstOrDefault(segment =>
-            segment.Nodes.Any(node => node.NodeId == _snapshot.CurrentNodeId));
+        MiniTimelineSegment root = MiniTimelineProjector.Create(_snapshot);
+        MiniTimelineSegment? current = Flatten(root).FirstOrDefault(segment =>
+            segment.Rows.Any(row => row.Node?.NodeId == _snapshot.CurrentNodeId));
         if (current == null) return;
         Dictionary<string, Vector2> positions = Layout(root);
         Rect2 rect = SegmentRect(current, positions[current.Id]);
@@ -175,33 +202,22 @@ internal sealed partial class TimelineMiniGraph : Control
         QueueRedraw();
     }
 
-    private static Rect2 SegmentRect(GraphSegment segment, Vector2 position) =>
-        new(position, new Vector2(NodeWidth, 56 + segment.Nodes.Count * RowHeight));
+    private static Rect2 SegmentRect(MiniTimelineSegment segment, Vector2 position) =>
+        new(position, new Vector2(NodeWidth, 56 + segment.Rows.Count * RowHeight
+            + (segment.HiddenBranchCount > 0 ? 28 : 0)));
 
-    private static GraphSegment BuildSegments(TimelineNodeSnapshot start)
-    {
-        List<TimelineNodeSnapshot> chain = [start];
-        TimelineNodeSnapshot tail = start;
-        while (tail.Children.Count == 1)
-        {
-            tail = tail.Children[0];
-            chain.Add(tail);
-        }
-        return new GraphSegment(start.NodeId, chain, tail.Children.Select(BuildSegments).ToList());
-    }
-
-    private static IEnumerable<GraphSegment> Flatten(GraphSegment root)
+    private static IEnumerable<MiniTimelineSegment> Flatten(MiniTimelineSegment root)
     {
         yield return root;
-        foreach (GraphSegment child in root.Children)
-        foreach (GraphSegment descendant in Flatten(child)) yield return descendant;
+        foreach (MiniTimelineSegment child in root.Children)
+        foreach (MiniTimelineSegment descendant in Flatten(child)) yield return descendant;
     }
 
-    private static Dictionary<string, Vector2> Layout(GraphSegment root)
+    private static Dictionary<string, Vector2> Layout(MiniTimelineSegment root)
     {
         Dictionary<string, Vector2> result = [];
         float column = 0;
-        float Place(GraphSegment segment, float y)
+        float Place(MiniTimelineSegment segment, float y)
         {
             float nextY = y + SegmentRect(segment, Vector2.Zero).Size.Y + 90;
             float x;
@@ -246,6 +262,4 @@ internal sealed partial class TimelineMiniGraph : Control
 
     private static string Clip(string text, int max) => text.Length <= max ? text : text[..(max - 1)] + "…";
 
-    private sealed record GraphSegment(string Id, IReadOnlyList<TimelineNodeSnapshot> Nodes,
-        List<GraphSegment> Children);
 }

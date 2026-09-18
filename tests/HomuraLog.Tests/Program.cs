@@ -58,4 +58,38 @@ TimelineAction chosenUpgrade = new(TimelineActionKind.CardChoice, 1, "SOURCE:CHO
     Choices: ["STRIKE_RED::combat:7::u1"]);
 Assert(chosenInstanceA.Key != chosenInstanceB.Key, "Different selected card instances must fork.");
 Assert(chosenInstanceA.Key != chosenUpgrade.Key, "Different selected upgrade levels must fork.");
+
+var projectionRecord = Record("projection-chain");
+var projectionWriter = new TimelineTree(projectionRecord);
+var projectionActions = Enumerable.Range(0, 10)
+    .Select(index => new TimelineAction(TimelineActionKind.PlayCard, 1, "CARD", index.ToString()))
+    .ToArray();
+foreach (TimelineAction action in projectionActions)
+    projectionWriter.Append(action, state, DateTimeOffset.UtcNow);
+var projectionCursor = new TimelineTree(projectionRecord);
+foreach (TimelineAction action in projectionActions.Take(5))
+    Assert(projectionCursor.FollowExisting(action), "Projection fixture path should exist.");
+MiniTimelineSegment chainProjection = MiniTimelineProjector.Create(projectionCursor.Snapshot());
+Assert(chainProjection.Rows.Count(row => row.Node != null) == 6,
+    "Current mini segment must retain three previous, current, and two following actions.");
+Assert(chainProjection.Rows.Any(row => row.IsOmission && row.OmittedCount == 2),
+    "Current mini segment must report omitted earlier actions.");
+Assert(chainProjection.Rows.Any(row => row.IsOmission && row.OmittedCount == 3),
+    "Current mini segment must report omitted later actions.");
+
+var fanoutRecord = Record("projection-fanout");
+TimelineAction[] fanoutActions = Enumerable.Range(0, 8)
+    .Select(index => new TimelineAction(TimelineActionKind.PlayCard, 1, $"CARD_{index}", index.ToString()))
+    .ToArray();
+foreach (TimelineAction action in fanoutActions)
+    new TimelineTree(fanoutRecord).Append(action, state, DateTimeOffset.UtcNow.AddSeconds(Array.IndexOf(fanoutActions, action)));
+var fanoutCursor = new TimelineTree(fanoutRecord);
+Assert(fanoutCursor.FollowExisting(fanoutActions[0]), "Current fanout branch should exist.");
+MiniTimelineSegment fanoutProjection = MiniTimelineProjector.Create(fanoutCursor.Snapshot());
+Assert(fanoutProjection.Children.Count == 6 && fanoutProjection.HiddenBranchCount == 2,
+    "Mini projection must cap a decision at six branches and report the remainder.");
+Assert(fanoutProjection.Children.Any(child => child.Rows.Any(row => row.Node?.IsCurrent == true)),
+    "The current branch must survive branch capping regardless of recency.");
+Assert(fanoutProjection.Children.Any(child => child.Rows.Any(row => row.Node?.Action?.SourceId == "CARD_7")),
+    "Non-current mini branches must be selected by most recent visit.");
 Console.WriteLine("HomuraLog core checks passed.");

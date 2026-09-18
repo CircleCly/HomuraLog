@@ -89,6 +89,7 @@ internal sealed partial class HomuraOverlay : CanvasLayer
             SizeFlagsVertical = Control.SizeFlags.ExpandFill,
         };
         _miniGraph.NodeActivated += ShowNodeDetails;
+        _miniGraph.MoreBranchesActivated += ShowFullGraphAt;
         _content.AddChild(_miniGraph);
         _content.AddChild(RitsuControlFactory.CreateDivider());
         _details = CreateRitsuLabel();
@@ -306,18 +307,28 @@ internal sealed partial class HomuraOverlay : CanvasLayer
     }
 
     private void ShowFullGraph()
+        => ShowFullGraphAt(null);
+
+    private void ShowFullGraphAt(string? focusNodeId)
     {
         if (_snapshot == null) return;
         if (_graphWindow != null && GodotObject.IsInstanceValid(_graphWindow))
         {
             _graphWindow.UpdateSnapshot(_snapshot);
             _graphWindow.Visible = true;
+            if (focusNodeId != null)
+            {
+                string target = focusNodeId;
+                Callable.From(() => _graphWindow?.FocusNode(target)).CallDeferred();
+            }
             return;
         }
         _graphWindow = new TimelineGraphWindow(_snapshot) { Name = "HomuraTimelineGraph" };
         _graphWindow.JumpRequested += RequestWorldlineJump;
         _graphWindow.DeleteRequested += DeleteWorldlineNode;
         AddChild(_graphWindow);
+        if (focusNodeId != null)
+            Callable.From(() => _graphWindow?.FocusNode(focusNodeId)).CallDeferred();
     }
 
     private void DeleteWorldlineNode(string nodeId)

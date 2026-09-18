@@ -138,6 +138,13 @@ internal sealed partial class TimelineGraphWindow : CanvasLayer
         if (IsInsideTree()) Render();
     }
 
+    public void FocusNode(string nodeId)
+    {
+        if (!_nodes.ContainsKey(nodeId)) return;
+        SelectNode(nodeId);
+        CenterNode(nodeId);
+    }
+
     private void Render()
     {
         foreach (Node child in _graph.GetChildren())
@@ -186,8 +193,11 @@ internal sealed partial class TimelineGraphWindow : CanvasLayer
     }
 
     private void CenterCurrent()
+        => CenterNode(_snapshot.CurrentNodeId);
+
+    private void CenterNode(string nodeId)
     {
-        if (!_segmentByNode.TryGetValue(_snapshot.CurrentNodeId, out string? segmentId)
+        if (!_segmentByNode.TryGetValue(nodeId, out string? segmentId)
             || !_graph.HasNode(segmentId)) return;
         GraphNode node = _graph.GetNode<GraphNode>(segmentId);
         _graph.ScrollOffset = node.PositionOffset - _graph.Size / 2 + node.Size / 2;

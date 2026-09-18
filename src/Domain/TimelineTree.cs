@@ -105,7 +105,7 @@ public sealed class TimelineTree
     }
 
     private TimelineNodeSnapshot BuildSnapshot(TimelineNode node, HashSet<string> currentPath) => new(
-        node.NodeId, node.Action, node.VisitCount, node.Outcome, node.State,
+        node.NodeId, node.Action, node.VisitCount, node.LastVisitedAt, node.Outcome, node.State,
         node.NodeId == Current.NodeId, currentPath.Contains(node.NodeId),
         node.Children.Values.OrderBy(child => child.FirstVisitedAt)
             .Select(child => BuildSnapshot(child, currentPath)).ToArray());

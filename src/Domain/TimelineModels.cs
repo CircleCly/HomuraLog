@@ -86,6 +86,7 @@ public sealed record TimelineNodeSnapshot(
     string NodeId,
     TimelineAction? Action,
     int Visits,
+    DateTimeOffset LastVisitedAt,
     TimelineOutcome Outcome,
     CombatStateSummary? State,
     bool IsCurrent,

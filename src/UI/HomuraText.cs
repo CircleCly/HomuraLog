@@ -46,6 +46,8 @@ internal static class HomuraText
     public static string LargeTreeHint(int shown, int total) => Chinese
         ? $"为保持流畅，当前显示 {shown}/{total} 个节点；完整记录未被合并。"
         : $"Showing {shown}/{total} nodes for performance; the full record remains exact.";
+    public static string OmittedActions(int count) => Chinese ? $"… 省略 {count} 步 …" : $"… {count} steps omitted …";
+    public static string MoreBranches(int count) => Chinese ? $"另有 {count} 条分支 · 全屏查看" : $"{count} more branches · open full graph";
     public static string OutcomeVictory => Chinese ? "胜利" : "Win";
     public static string OutcomeDefeat => Chinese ? "失败" : "Loss";
     public static string OutcomeAborted => Chinese ? "已回溯" : "SL";

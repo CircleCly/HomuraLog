@@ -34,22 +34,20 @@ internal static class HomuraText
     public static string EndTurn => Chinese ? "结束回合" : "End turn";
     public static string Skip => Chinese ? "跳过选择" : "Skip choice";
     public static string Choice => Chinese ? "选择" : "Choice";
-    public static string FullGraph => Chinese ? "全屏世界线" : "Fullscreen graph";
+    public static string FullGraph => Chinese ? "世界线大图" : "Timeline graph";
     public static string ResetView => Chinese ? "重置视图" : "Reset view";
-    public static string CompactFullGraph => Chinese ? "全屏" : "Full";
+    public static string CompactFullGraph => Chinese ? "大图" : "Large view";
     public static string CompactResetView => Chinese ? "重置" : "Reset";
-    public static string Fullscreen => Chinese ? "全屏" : "Fullscreen";
-    public static string ExitFullscreen => Chinese ? "退出全屏" : "Exit fullscreen";
     public static string JumpHere => Chinese ? "跳到此世界线" : "Jump to this timeline";
     public static string DeleteNode => Chinese ? "删除节点及后续分支" : "Delete node and descendants";
-    public static string ConfirmJump => Chinese ? "再次点击确认重载并回放" : "Click again to reload and replay";
+    public static string ConfirmJump => Chinese ? "再次点击确认跳转" : "Click again to confirm jump";
     public static string JumpRootUnavailable => Chinese ? "战斗入口无需回放" : "The combat entry needs no replay";
     public static string GraphHelp => Chinese ? "滚轮缩放 · 拖动空白处平移 · 点击节点查看详情" : "Wheel to zoom · drag the background to pan · click a node for details";
     public static string LargeTreeHint(int shown, int total) => Chinese
         ? $"为保持流畅，当前显示 {shown}/{total} 个节点；完整记录未被合并。"
         : $"Showing {shown}/{total} nodes for performance; the full record remains exact.";
     public static string OmittedActions(int count) => Chinese ? $"… 省略 {count} 步 …" : $"… {count} steps omitted …";
-    public static string MoreBranches(int count) => Chinese ? $"另有 {count} 条分支 · 全屏查看" : $"{count} more branches · open full graph";
+    public static string MoreBranches(int count) => Chinese ? $"另有 {count} 条分支 · 大图查看" : $"{count} more branches · open large view";
     public static string Forwarding(int count) => Chinese ? $"正在从当前位置前进 · {count} 个记录步骤" : $"Advancing from current position · {count} recorded steps";
     public static string ForwardStep(int current, int total, string source) => Chinese
         ? $"正在前进 {current}/{total}：{source}" : $"Advancing {current}/{total}: {source}";

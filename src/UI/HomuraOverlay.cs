@@ -120,8 +120,7 @@ internal sealed partial class HomuraOverlay : CanvasLayer
         _snapshot = null;
         _selectedMiniNodeId = null;
         DestroyMiniInspector();
-        _graphWindow?.QueueFree();
-        _graphWindow = null;
+        CloseGraphWindow();
         Visible = false;
         ClearBadges();
         if (wasBound) Entry.Logger.Info("Combat overlay hidden; timeline data was finalized before unbinding.");
@@ -143,7 +142,7 @@ internal sealed partial class HomuraOverlay : CanvasLayer
         _snapshot = snapshot;
         Visible = true;
         Render();
-        if (_graphWindow != null && GodotObject.IsInstanceValid(_graphWindow))
+        if (_graphWindow != null && GodotObject.IsInstanceValid(_graphWindow) && _graphWindow.IsAvailable)
             _graphWindow.UpdateSnapshot(snapshot);
         else
             _graphWindow = null;
@@ -311,23 +310,39 @@ internal sealed partial class HomuraOverlay : CanvasLayer
     private void ShowFullGraphAt(string? focusNodeId)
     {
         if (_snapshot == null) return;
-        if (_graphWindow != null && GodotObject.IsInstanceValid(_graphWindow))
+        if (_graphWindow != null && GodotObject.IsInstanceValid(_graphWindow) && _graphWindow.IsAvailable)
         {
             _graphWindow.UpdateSnapshot(_snapshot);
             _graphWindow.Visible = true;
             if (focusNodeId != null)
             {
                 string target = focusNodeId;
-                Callable.From(() => _graphWindow?.FocusNode(target)).CallDeferred();
+                TimelineGraphWindow graph = _graphWindow;
+                Callable.From(() =>
+                {
+                    if (GodotObject.IsInstanceValid(graph) && graph.IsAvailable) graph.FocusNode(target);
+                }).CallDeferred();
             }
             return;
         }
-        _graphWindow = new TimelineGraphWindow(_snapshot) { Name = "HomuraTimelineGraph" };
-        _graphWindow.JumpRequested += RequestWorldlineJump;
-        _graphWindow.DeleteRequested += DeleteWorldlineNode;
-        AddChild(_graphWindow);
+        _graphWindow = null;
+        TimelineGraphWindow created = new(_snapshot) { Name = "HomuraTimelineGraph" };
+        created.JumpRequested += nodeId => SubmitWorldlineJump(nodeId, "large-view");
+        created.DeleteRequested += DeleteWorldlineNode;
+        created.Closed += () =>
+        {
+            if (ReferenceEquals(_graphWindow, created)) _graphWindow = null;
+        };
+        _graphWindow = created;
+        AddChild(created);
         if (focusNodeId != null)
-            Callable.From(() => _graphWindow?.FocusNode(focusNodeId)).CallDeferred();
+        {
+            string target = focusNodeId;
+            Callable.From(() =>
+            {
+                if (GodotObject.IsInstanceValid(created) && created.IsAvailable) created.FocusNode(target);
+            }).CallDeferred();
+        }
     }
 
     private void DeleteWorldlineNode(string nodeId)
@@ -340,24 +355,36 @@ internal sealed partial class HomuraOverlay : CanvasLayer
     {
         ShowFullGraph();
         if (_graphWindow != null)
-            Callable.From(_graphWindow.RunFullscreenSmokeCheck).CallDeferred();
-        Entry.Logger.Info("UI smoke check created the Ritsu main window, compact graph, and fullscreen timeline graph.");
+            Callable.From(_graphWindow.RunLargeWindowSmokeCheck).CallDeferred();
+        Entry.Logger.Info("UI smoke check created the Ritsu main window, compact graph, and large timeline graph.");
     }
 
-    private void RequestWorldlineJump(string nodeId)
+    private void CloseGraphWindow()
     {
-        if (_session == null) return;
-        _graphWindow?.QueueFree();
+        TimelineGraphWindow? graph = _graphWindow;
         _graphWindow = null;
+        if (graph != null && GodotObject.IsInstanceValid(graph)) graph.QueueFree();
+    }
+
+    private void SubmitWorldlineJump(string nodeId, string source)
+    {
+        TimelineSession? session = _session;
+        TimelineSnapshot? snapshot = _snapshot;
+        if (session == null || snapshot == null) return;
+        TimelineNodeSnapshot? node = FindNode(snapshot.Root, nodeId);
+        if (node?.Action == null || node.IsCurrent) return;
+        string mode = session.TryGetForwardPath(nodeId, out _) ? "forward" : "reload";
+        Entry.Logger.Info($"Worldline jump submitted source={source} mode={mode} node={nodeId}.");
+        CloseGraphWindow();
         DestroyMiniInspector();
-        WorldlineReplayController.Request(_session, nodeId);
+        WorldlineReplayController.Request(session, nodeId);
     }
 
     private void RequestMiniWorldlineJump()
     {
-        if (_selectedMiniNodeId == null || _snapshot == null
-            || _selectedMiniNodeId == _snapshot.CurrentNodeId) return;
-        RequestWorldlineJump(_selectedMiniNodeId);
+        string? nodeId = _selectedMiniNodeId;
+        if (nodeId == null) return;
+        SubmitWorldlineJump(nodeId, "mini-inspector");
     }
 
     private void OnReplayStatus(string message)
@@ -415,7 +442,7 @@ internal sealed partial class HomuraOverlay : CanvasLayer
             if (_panel != null) _panel.Visible = show;
             if (_miniInspector != null && GodotObject.IsInstanceValid(_miniInspector))
                 _miniInspector.Visible = show;
-            if (_graphWindow != null && GodotObject.IsInstanceValid(_graphWindow))
+            if (_graphWindow != null && GodotObject.IsInstanceValid(_graphWindow) && _graphWindow.IsAvailable)
                 _graphWindow.Visible = show;
             if (show && _selectedMiniNodeId != null && _miniInspector != null)
                 ShowNodeDetails(_selectedMiniNodeId);
@@ -440,14 +467,12 @@ internal sealed partial class HomuraOverlay : CanvasLayer
             var field = typeof(RitsuFloatingWindow).GetField("_title",
                 System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
             if (field?.GetValue(_panel) is Label title) title.Text = HomuraText.Title;
-            if (field?.GetValue(_miniInspector) is Label inspectorTitle) inspectorTitle.Text = HomuraText.Details;
+            if (_miniInspector != null && GodotObject.IsInstanceValid(_miniInspector)
+                && field?.GetValue(_miniInspector) is Label inspectorTitle)
+                inspectorTitle.Text = HomuraText.Details;
         }
         catch (Exception error) { Entry.Logger.Warn($"Could not refresh localized window title: {error.Message}"); }
-        if (_graphWindow != null && GodotObject.IsInstanceValid(_graphWindow))
-        {
-            _graphWindow.QueueFree();
-            _graphWindow = null;
-        }
+        CloseGraphWindow();
         if (_snapshot != null) Render();
     }
 
@@ -474,7 +499,7 @@ internal sealed partial class HomuraOverlay : CanvasLayer
             _panel.CustomMinimumSize = new Vector2(360, 260);
             _panel.Size = new Vector2(Math.Max(360, _expandedSize.X), Math.Max(260, _expandedSize.Y));
         }
-        // The fullscreen graph remains reachable even in compact mode; otherwise a
+        // The large graph remains reachable even in compact mode; otherwise a
         // compact HUD can trap the user in a view with no way to inspect the tree.
         _fullGraph.Visible = true;
         _resetMini.Visible = true;

@@ -9,12 +9,12 @@ namespace HomuraLog.UI;
 internal sealed partial class TimelineGraphWindow : CanvasLayer
 {
     private const int MaxRenderedNodes = 600;
+    private const float WindowOpacity = 0.82f;
     private readonly RitsuFloatingWindow _window;
     private readonly GraphEdit _graph;
     private readonly ArrowOverlay _arrows;
     private readonly Label _hint;
     private readonly Label _details;
-    private readonly Button _fullscreenButton;
     private readonly Button _jumpButton;
     private readonly Button _deleteButton;
     private readonly Dictionary<string, TimelineNodeSnapshot> _nodes = new(StringComparer.Ordinal);
@@ -24,10 +24,9 @@ internal sealed partial class TimelineGraphWindow : CanvasLayer
     private TimelineSnapshot _snapshot;
     private string? _selectedNodeId;
     private bool _jumpArmed;
-    private bool _fullscreen;
-    private Vector2 _savedPosition;
-    private Vector2 _savedSize;
     private bool _panning;
+    private bool _closedNotified;
+    private Viewport? _viewport;
 
     public TimelineGraphWindow(TimelineSnapshot snapshot)
     {
@@ -36,15 +35,22 @@ internal sealed partial class TimelineGraphWindow : CanvasLayer
         _window = new RitsuFloatingWindow(new RitsuFloatingWindowOptions
         {
             Title = HomuraText.FullGraph,
-            InitialSize = new Vector2(1500, 900),
-            MinimumSize = new Vector2(800, 500),
+            InitialSize = new Vector2(1200, 720),
+            MinimumSize = new Vector2(560, 360),
+            MaximumSize = new Vector2(LargeWindowGeometry.MaximumWidth, LargeWindowGeometry.MaximumHeight),
             FitInitialSizeToContent = false,
             Movable = true,
             Resizable = true,
             Closable = true,
             StartCentered = true,
+            ConstrainToViewport = true,
         });
-        _window.Closed += (_, _) => QueueFree();
+        _window.Modulate = new Color(1f, 1f, 1f, WindowOpacity);
+        _window.Closed += (_, _) =>
+        {
+            NotifyClosed();
+            QueueFree();
+        };
 
         VBoxContainer content = new();
         ApplyBodyFont(content);
@@ -61,10 +67,6 @@ internal sealed partial class TimelineGraphWindow : CanvasLayer
         ApplyButtonFont(center);
         center.Pressed += CenterCurrent;
         toolbar.AddChild(center);
-        _fullscreenButton = new Button { Text = HomuraText.Fullscreen, FocusMode = Control.FocusModeEnum.None };
-        ApplyButtonFont(_fullscreenButton);
-        _fullscreenButton.Pressed += ToggleFullscreen;
-        toolbar.AddChild(_fullscreenButton);
         content.AddChild(toolbar);
 
         _hint = new Label { AutowrapMode = TextServer.AutowrapMode.WordSmart };
@@ -75,7 +77,7 @@ internal sealed partial class TimelineGraphWindow : CanvasLayer
         {
             SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
             SizeFlagsVertical = Control.SizeFlags.ExpandFill,
-            CustomMinimumSize = new Vector2(650, 410),
+            CustomMinimumSize = new Vector2(430, 340),
             ShowGrid = true,
             MinimapEnabled = true,
             ShowZoomLabel = true,
@@ -92,7 +94,7 @@ internal sealed partial class TimelineGraphWindow : CanvasLayer
         _graph.AddChild(_arrows);
         split.AddChild(_graph);
 
-        VBoxContainer inspector = new() { CustomMinimumSize = new Vector2(330, 0) };
+        VBoxContainer inspector = new() { CustomMinimumSize = new Vector2(240, 0) };
         Label inspectorTitle = new() { Text = HomuraText.Details };
         inspectorTitle.AddThemeFontOverride("font", RitsuShellTheme.Current.Font.BodyBold);
         inspectorTitle.AddThemeFontSizeOverride("font_size", 20);
@@ -122,14 +124,33 @@ internal sealed partial class TimelineGraphWindow : CanvasLayer
 
     public event Action<string>? JumpRequested;
     public event Action<string>? DeleteRequested;
+    public event Action? Closed;
 
-    public override void _Ready() => Render();
+    public bool IsAvailable => !_closedNotified && GodotObject.IsInstanceValid(this);
 
-    internal void RunFullscreenSmokeCheck()
+    public override void _Ready()
     {
-        ToggleFullscreen();
-        ToggleFullscreen();
-        Entry.Logger.Info("UI smoke check toggled true fullscreen successfully.");
+        _viewport = GetViewport();
+        _viewport.SizeChanged += ClampToViewport;
+        ApplyDefaultLargeBounds();
+        Render();
+    }
+
+    public override void _ExitTree()
+    {
+        if (_viewport != null && GodotObject.IsInstanceValid(_viewport))
+            _viewport.SizeChanged -= ClampToViewport;
+        NotifyClosed();
+    }
+
+    internal void RunLargeWindowSmokeCheck()
+    {
+        Rect2 visible = GetViewport().GetVisibleRect();
+        bool inside = _window.Position.X >= LargeWindowGeometry.Margin
+            && _window.Position.Y >= LargeWindowGeometry.Margin
+            && _window.Position.X + _window.Size.X <= visible.Size.X - LargeWindowGeometry.Margin + 1
+            && _window.Position.Y + _window.Size.Y <= visible.Size.Y - LargeWindowGeometry.Margin + 1;
+        Entry.Logger.Info($"UI smoke check large graph size={_window.Size} opacity={_window.Modulate.A:0.00} inside={inside}.");
     }
 
     public void UpdateSnapshot(TimelineSnapshot snapshot)
@@ -203,26 +224,28 @@ internal sealed partial class TimelineGraphWindow : CanvasLayer
         _graph.ScrollOffset = node.PositionOffset - _graph.Size / 2 + node.Size / 2;
     }
 
-    private void ToggleFullscreen()
+    private void ApplyDefaultLargeBounds()
     {
-        _fullscreen = !_fullscreen;
-        if (_fullscreen)
-        {
-            _savedPosition = _window.Position;
-            _savedSize = _window.Size;
-            _window.InteractionLocked = true;
-            _window.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
-            _window.Position = Vector2.Zero;
-            _window.Size = GetViewport().GetVisibleRect().Size;
-        }
-        else
-        {
-            _window.SetAnchorsPreset(Control.LayoutPreset.TopLeft);
-            _window.Position = _savedPosition;
-            _window.Size = _savedSize;
-            _window.InteractionLocked = false;
-        }
-        _fullscreenButton.Text = _fullscreen ? HomuraText.ExitFullscreen : HomuraText.Fullscreen;
+        Vector2 viewport = GetViewport().GetVisibleRect().Size;
+        LargeWindowBounds bounds = LargeWindowGeometry.Default(viewport.X, viewport.Y);
+        _window.Position = new Vector2(bounds.X, bounds.Y);
+        _window.Size = new Vector2(bounds.Width, bounds.Height);
+    }
+
+    private void ClampToViewport()
+    {
+        Vector2 viewport = GetViewport().GetVisibleRect().Size;
+        LargeWindowBounds bounds = LargeWindowGeometry.Clamp(viewport.X, viewport.Y,
+            _window.Position.X, _window.Position.Y, _window.Size.X, _window.Size.Y);
+        _window.Position = new Vector2(bounds.X, bounds.Y);
+        _window.Size = new Vector2(bounds.Width, bounds.Height);
+    }
+
+    private void NotifyClosed()
+    {
+        if (_closedNotified) return;
+        _closedNotified = true;
+        Closed?.Invoke();
     }
 
     private void OnNodeSelected(Node node)
@@ -238,7 +261,7 @@ internal sealed partial class TimelineGraphWindow : CanvasLayer
         RefreshSelectionHighlight();
         _jumpArmed = false;
         _jumpButton.Text = HomuraText.JumpHere;
-        _jumpButton.Disabled = node.Action == null;
+        _jumpButton.Disabled = node.Action == null || node.IsCurrent;
         _deleteButton.Disabled = node.Action == null;
         string action = node.Action == null ? HomuraText.Root : HomuraOverlay.ActionText(node.Action);
         string state = node.State == null ? HomuraText.None :

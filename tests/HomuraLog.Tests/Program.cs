@@ -115,6 +115,24 @@ int projectedItems = FlattenMini(fanoutProjection).Sum(segment => segment.Rows.C
 Assert(compactItems.Length == projectedItems,
     "Compact layout must preserve every projected action, omission, and hidden-branch prompt.");
 
+LargeWindowBounds hdWindow = LargeWindowGeometry.Default(1920, 1080);
+Assert(hdWindow.Width == 1536 && hdWindow.Height == 810
+    && hdWindow.X == 192 && hdWindow.Y == 135,
+    "The large timeline window must default to 80% by 75% and remain centered at 1920x1080.");
+LargeWindowBounds qhdWindow = LargeWindowGeometry.Default(2560, 1440);
+Assert(qhdWindow.Width == 2048 && qhdWindow.Height == 1080,
+    "The large timeline window must scale responsively at 2560x1440.");
+LargeWindowBounds smallWindow = LargeWindowGeometry.Default(800, 600);
+Assert(smallWindow.X >= LargeWindowGeometry.Margin && smallWindow.Y >= LargeWindowGeometry.Margin
+    && smallWindow.X + smallWindow.Width <= 800 - LargeWindowGeometry.Margin
+    && smallWindow.Y + smallWindow.Height <= 600 - LargeWindowGeometry.Margin,
+    "Small viewports must retain the large window safety margin.");
+LargeWindowBounds clampedWindow = LargeWindowGeometry.Clamp(1920, 1080, -400, 900, 1700, 900);
+Assert(clampedWindow.X >= LargeWindowGeometry.Margin && clampedWindow.Y >= LargeWindowGeometry.Margin
+    && clampedWindow.X + clampedWindow.Width <= 1920 - LargeWindowGeometry.Margin
+    && clampedWindow.Y + clampedWindow.Height <= 1080 - LargeWindowGeometry.Margin,
+    "Viewport changes must clamp a manually adjusted large window back on screen.");
+
 var forwardRecord = Record("forward-path");
 var forwardWriter = new TimelineTree(forwardRecord);
 TimelineAction forwardA = new(TimelineActionKind.PlayCard, 1, "A", "1");

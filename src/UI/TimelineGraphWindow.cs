@@ -33,6 +33,9 @@ internal sealed partial class TimelineGraphWindow : CanvasLayer
     private bool _usingPreferredBounds;
     private bool _layoutDirty;
     private ulong _layoutSaveAt;
+    private bool _smokeSuppressRequests;
+
+    internal string? SmokeLastRequest { get; private set; }
 
     public TimelineGraphWindow(TimelineSnapshot snapshot, string focusedNodeId)
     {
@@ -158,6 +161,15 @@ internal sealed partial class TimelineGraphWindow : CanvasLayer
         Rect2 rect = _graph.GetGlobalRect();
         return rect.Position + new Vector2(Math.Max(40, rect.Size.X * 0.48f), rect.Size.Y - 34);
     }
+
+    internal void SuppressRequestsForSmoke(bool suppress)
+    {
+        _smokeSuppressRequests = suppress;
+        SmokeLastRequest = null;
+    }
+
+    internal Vector2 SmokeJumpButtonCenter() => _jumpButton.GetGlobalRect().GetCenter();
+    internal Vector2 SmokeDeleteButtonCenter() => _deleteButton.GetGlobalRect().GetCenter();
 
     public override void _Ready()
     {
@@ -390,12 +402,23 @@ internal sealed partial class TimelineGraphWindow : CanvasLayer
         if (_selectedNodeId == null || !_nodes.TryGetValue(_selectedNodeId, out TimelineNodeSnapshot? node)
             || node.Action == null) return;
         _jumpButton.Disabled = true;
+        if (_smokeSuppressRequests)
+        {
+            SmokeLastRequest = $"jump:{_selectedNodeId}";
+            return;
+        }
         JumpRequested?.Invoke(_selectedNodeId);
     }
 
     private void RequestDelete()
     {
-        if (!string.IsNullOrEmpty(_selectedNodeId)) DeleteRequested?.Invoke(_selectedNodeId);
+        if (string.IsNullOrEmpty(_selectedNodeId)) return;
+        if (_smokeSuppressRequests)
+        {
+            SmokeLastRequest = $"delete:{_selectedNodeId}";
+            return;
+        }
+        DeleteRequested?.Invoke(_selectedNodeId);
     }
 
     private GraphNode CreateNode(GraphSegment segment)

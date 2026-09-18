@@ -14,6 +14,7 @@ Evidence is stored under `%APPDATA%\SlayTheSpire2\HomuraLog\visual-smoke`. The 2
 - HomuraLog windows are absent from the native draw-pile, map, and pause screens. The smoke harness confirms the expected native screen type and waits for its transition to settle before capturing.
 - Hiding is scoped to HomuraLog: unrelated mod overlays remain visible on the tested native screens.
 - Injected Godot pointer events successfully hit compact branch arrows, compact wheel zoom/drag, a large-view node row, and large-view wheel zoom/drag; each test also verifies the resulting focus, branch, zoom, or pan state.
+- Compact and large jump buttons and the large delete button deliver the exact selected node ID through real pointer hits. The smoke harness suppresses the final mutation; tree deletion and replay path selection remain separately covered by core tests.
 - Localized enemy intent is converted to plain text before entering ordinary labels, so Godot tags such as `[font_size]` no longer leak into node details.
 
 ## Usability issues found
@@ -31,7 +32,7 @@ Evidence is stored under `%APPDATA%\SlayTheSpire2\HomuraLog\visual-smoke`. The 2
 
 ## Remaining functional coverage
 
-- Jump execution from compact details and the large inspector.
+- An opt-in end-to-end replay execution pass; the default smoke suite deliberately stops jump requests before changing the live combat.
 - Delete-node execution and focus fallback.
 - Suppression while the discard-pile screen is open; the current smoke save has an empty discard pile, so the harness records the unmet precondition instead of a false pass.
 - A second native display/UI-scale configuration, rather than only resizing the same Godot logical viewport.

@@ -39,6 +39,8 @@ internal sealed partial class HomuraOverlay : CanvasLayer
     private bool _hiddenForCombatModal;
     private Vector2 _expandedSize = new(440, 360);
     private string _lastLanguage = "";
+    private bool _smokeSuppressJump;
+    private string? _smokeLastJumpNodeId;
 
     public override void _Ready()
     {
@@ -317,7 +319,7 @@ internal sealed partial class HomuraOverlay : CanvasLayer
             var enemy = combat?.Enemies.FirstOrDefault(candidate => candidate.CombatId == recorded.CombatId.Value);
             if (enemy?.Monster == null) return LocalizedIntent.Format(recorded);
             return string.Join(" + ", enemy.Monster.NextMove.Intents.Select(intent =>
-                intent.GetIntentLabel(combat!.Allies, enemy).GetFormattedText().Trim()));
+                RichText.ToPlainText(intent.GetIntentLabel(combat!.Allies, enemy).GetFormattedText()).Trim()));
         }
         catch { return LocalizedIntent.Format(recorded); }
     }
@@ -493,6 +495,15 @@ internal sealed partial class HomuraOverlay : CanvasLayer
             $"expected={expectedChild} actual={_focus.FocusedNodeId}.");
         await CaptureViewport(directory, "14-mini-pointer-down.png");
 
+        _smokeSuppressJump = true;
+        _smokeLastJumpNodeId = null;
+        if (_miniJump != null && !_miniJump.Disabled)
+            await ClickAt(_miniJump.GetGlobalRect().GetCenter());
+        bool jumpWorked = string.Equals(_smokeLastJumpNodeId, expectedChild, StringComparison.Ordinal);
+        _smokeSuppressJump = false;
+        Entry.Logger.Info($"Visual smoke pointer mini-jump-request worked={jumpWorked} " +
+            $"expected={expectedChild} actual={_smokeLastJumpNodeId}.");
+
         float zoomBefore = _miniGraph.SmokeZoom;
         Vector2 canvasPoint = _miniGraph.SmokeCanvasPoint();
         GetViewport().PushInput(new InputEventMouseButton
@@ -551,6 +562,16 @@ internal sealed partial class HomuraOverlay : CanvasLayer
         bool rowWorked = string.Equals(_focus.FocusedNodeId, alternate.NodeId, StringComparison.Ordinal);
         Entry.Logger.Info($"Visual smoke pointer large-row worked={rowWorked} before={beforeFocus} " +
             $"expected={alternate.NodeId} actual={_focus.FocusedNodeId} point={rowPoint}.");
+
+        _graphWindow.SuppressRequestsForSmoke(true);
+        await ClickAt(_graphWindow.SmokeJumpButtonCenter());
+        bool jumpWorked = _graphWindow.SmokeLastRequest == $"jump:{alternate.NodeId}";
+        _graphWindow.SuppressRequestsForSmoke(true);
+        await ClickAt(_graphWindow.SmokeDeleteButtonCenter());
+        bool deleteWorked = _graphWindow.SmokeLastRequest == $"delete:{alternate.NodeId}";
+        _graphWindow.SuppressRequestsForSmoke(false);
+        Entry.Logger.Info($"Visual smoke pointer large-actions jumpWorked={jumpWorked} " +
+            $"deleteWorked={deleteWorked} node={alternate.NodeId}.");
 
         Vector2 canvasPoint = _graphWindow.SmokeCanvasPoint();
         float zoomBefore = _graphWindow.SmokeZoom;
@@ -772,6 +793,11 @@ internal sealed partial class HomuraOverlay : CanvasLayer
         if (session == null || snapshot == null) return;
         TimelineNodeSnapshot? node = FindNode(snapshot.Root, nodeId);
         if (node?.Action == null || node.IsCurrent) return;
+        if (_smokeSuppressJump)
+        {
+            _smokeLastJumpNodeId = nodeId;
+            return;
+        }
         string mode = session.TryGetForwardPath(nodeId, out _) ? "forward" : "reload";
         Entry.Logger.Info($"Worldline jump submitted source={source} mode={mode} node={nodeId}.");
         CloseGraphWindow();

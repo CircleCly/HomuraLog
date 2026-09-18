@@ -35,8 +35,10 @@ public static class CompactTimelineLayout
     public static CompactTimelineLayoutResult Create(
         MiniTimelineSegment root,
         Func<MiniTimelineRow, float> rowWidth,
-        Func<MiniTimelineSegment, float> moreWidth)
+        Func<MiniTimelineSegment, float> moreWidth,
+        Func<MiniTimelineRow, float>? rowHeight = null)
     {
+        rowHeight ??= _ => ItemHeight;
         Dictionary<string, SegmentMetrics> metrics = [];
         Measure(root);
         float centerWidth = Flatten(root)
@@ -95,12 +97,15 @@ public static class CompactTimelineLayout
             float width = segment.Rows.Select(rowWidth).DefaultIfEmpty(150f).Max();
             if (segment.HiddenBranchCount > 0) width = Math.Max(width, moreWidth(segment));
             int count = segment.Rows.Count + (segment.HiddenBranchCount > 0 ? 1 : 0);
-            float ownHeight = count * ItemHeight + Math.Max(0, count - 1) * ItemGap;
+            float[] heights = segment.Rows.Select(rowHeight).ToArray();
+            float ownHeight = heights.Sum()
+                + (segment.HiddenBranchCount > 0 ? ItemHeight : 0)
+                + Math.Max(0, count - 1) * ItemGap;
             float sideHeight = ownHeight;
             if (segment.Children.Count > 0)
                 sideHeight += BranchGap + segment.Children.Sum(child => Measure(child).SideHeight)
                     + Math.Max(0, segment.Children.Count - 1) * BranchGap;
-            return metrics[segment.Id] = new SegmentMetrics(width, ownHeight, sideHeight);
+            return metrics[segment.Id] = new SegmentMetrics(width, ownHeight, sideHeight, heights);
         }
 
         void PlaceSpine(MiniTimelineSegment segment, float y)
@@ -147,20 +152,23 @@ public static class CompactTimelineLayout
 
         void PlaceItems(MiniTimelineSegment segment, float x, float y)
         {
+            float cursorY = y;
             for (int index = 0; index < segment.Rows.Count; index++)
             {
                 MiniTimelineRow row = segment.Rows[index];
                 float width = rowWidth(row);
+                float height = metrics[segment.Id].RowHeights[index];
                 items.Add(new CompactTimelineItem($"{segment.Id}:row:{index}", row, segment, false,
                     x + (metrics[segment.Id].Width - width) / 2,
-                    y + index * (ItemHeight + ItemGap), width, ItemHeight));
+                    cursorY, width, height));
+                cursorY += height + ItemGap;
             }
             if (segment.HiddenBranchCount > 0)
             {
                 float width = moreWidth(segment);
                 items.Add(new CompactTimelineItem($"{segment.Id}:more", null, segment, true,
                     x + (metrics[segment.Id].Width - width) / 2,
-                    y + segment.Rows.Count * (ItemHeight + ItemGap), width, ItemHeight));
+                    cursorY, width, ItemHeight));
             }
         }
 
@@ -187,5 +195,6 @@ public static class CompactTimelineLayout
         foreach (MiniTimelineSegment descendant in Flatten(child)) yield return descendant;
     }
 
-    private sealed record SegmentMetrics(float Width, float OwnHeight, float SideHeight);
+    private sealed record SegmentMetrics(float Width, float OwnHeight, float SideHeight,
+        IReadOnlyList<float> RowHeights);
 }

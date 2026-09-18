@@ -7,8 +7,12 @@ namespace HomuraLog.UI;
 /// <summary>A compact, independently laid out viewport over the current timeline neighborhood.</summary>
 internal sealed partial class TimelineMiniGraph : Control
 {
-    private const float MinReadableZoom = 0.9f;
+    private const float MinReadableZoom = 0.72f;
+    private const float FirstStepWidth = 160f;
+    private const float RegularMaxWidth = 190f;
     private readonly List<HitArea> _hitAreas = [];
+    private HashSet<string> _immediateNextNodeIds = new(StringComparer.Ordinal);
+    private HashSet<string> _firstStepSegmentNodeIds = new(StringComparer.Ordinal);
     private TimelineSnapshot? _snapshot;
     private CompactTimelineLayoutResult? _layout;
     private string? _selectedNodeId;
@@ -132,13 +136,37 @@ internal sealed partial class TimelineMiniGraph : Control
     {
         MiniTimelineSegment root = MiniTimelineProjector.Create(_snapshot!);
         Font font = RitsuShellTheme.Current.Font.Body;
+        Font bold = RitsuShellTheme.Current.Font.BodyBold;
+        TimelineNodeSnapshot? current = Find(_snapshot!.Root, _snapshot.CurrentNodeId);
+        _immediateNextNodeIds = current?.Children.Select(child => child.NodeId)
+            .ToHashSet(StringComparer.Ordinal) ?? new HashSet<string>(StringComparer.Ordinal);
+        _firstStepSegmentNodeIds = Flatten(root)
+            .Where(segment => segment.Rows.Any(row => row.Node != null
+                && _immediateNextNodeIds.Contains(row.Node.NodeId)))
+            .SelectMany(segment => segment.Rows.Where(row => row.Node != null).Select(row => row.Node!.NodeId))
+            .ToHashSet(StringComparer.Ordinal);
         return CompactTimelineLayout.Create(root,
-            row => MeasureWidth(RowText(row), font, 16),
-            segment => MeasureWidth(HomuraText.MoreBranches(segment.HiddenBranchCount), font, 14));
+            row => RowWidth(row, font),
+            segment => MeasureWidth(HomuraText.MoreBranches(segment.HiddenBranchCount), font, 14),
+            row => RowHeight(row, bold));
+    }
+
+    private float RowWidth(MiniTimelineRow row, Font font)
+    {
+        if (row.Node != null && _firstStepSegmentNodeIds.Contains(row.Node.NodeId)) return FirstStepWidth;
+        return MeasureWidth(RowText(row), font, 16);
+    }
+
+    private float RowHeight(MiniTimelineRow row, Font font)
+    {
+        if (row.Node == null || !_immediateNextNodeIds.Contains(row.Node.NodeId))
+            return CompactTimelineLayout.ItemHeight;
+        int lines = WrapText(RowText(row), font, FirstStepWidth - 18, 16).Count;
+        return Math.Max(CompactTimelineLayout.ItemHeight, 10 + lines * 19);
     }
 
     private static float MeasureWidth(string text, Font font, int fontSize) =>
-        Math.Clamp(font.GetStringSize(text, HorizontalAlignment.Left, -1, fontSize).X + 24f, 150f, 210f);
+        Math.Clamp(font.GetStringSize(text, HorizontalAlignment.Left, -1, fontSize).X + 24f, 150f, RegularMaxWidth);
 
     private void DrawItem(CompactTimelineItem item, RitsuShellTheme theme)
     {
@@ -172,10 +200,23 @@ internal sealed partial class TimelineMiniGraph : Control
         DrawCard(rect, background, selected ? new Color("ffd166") : accent, node.IsCurrent || selected ? 3 : 1.5f);
         string fullText = RowText(row);
         string prefix = node.IsCurrent ? "▶ " : "";
-        string shown = prefix + ClipToWidth(fullText, selected ? theme.Font.BodyBold : theme.Font.Body,
-            rect.Size.X - 18 - MeasureText(prefix, theme.Font.BodyBold, 16), 16);
-        DrawString(selected ? theme.Font.BodyBold : theme.Font.Body, rect.Position + new Vector2(9, 22), shown,
-            HorizontalAlignment.Left, rect.Size.X - 18, 16, selected ? Colors.White : accent);
+        Font textFont = selected || _immediateNextNodeIds.Contains(node.NodeId)
+            ? theme.Font.BodyBold : theme.Font.Body;
+        if (_immediateNextNodeIds.Contains(node.NodeId))
+        {
+            IReadOnlyList<string> lines = WrapText(fullText, textFont, rect.Size.X - 18, 16);
+            for (int index = 0; index < lines.Count; index++)
+                DrawString(textFont, rect.Position + new Vector2(9, 22 + index * 19),
+                    (index == 0 ? prefix : "") + lines[index], HorizontalAlignment.Left,
+                    rect.Size.X - 18, 16, selected ? Colors.White : accent);
+        }
+        else
+        {
+            string shown = prefix + ClipToWidth(fullText, textFont,
+                rect.Size.X - 18 - MeasureText(prefix, theme.Font.BodyBold, 16), 16);
+            DrawString(textFont, rect.Position + new Vector2(9, 22), shown,
+                HorizontalAlignment.Left, rect.Size.X - 18, 16, selected ? Colors.White : accent);
+        }
         _hitAreas.Add(new HitArea(rect, item.Id, node.NodeId, null, fullText));
     }
 
@@ -249,9 +290,9 @@ internal sealed partial class TimelineMiniGraph : Control
     {
         if (_snapshot == null || Size.X <= 0 || Size.Y <= 0) return;
         _layout = BuildLayout();
-        CompactTimelineItem? current = _layout.Items.FirstOrDefault(item => item.Id == _layout.CurrentItemId);
-        if (current == null) return;
-        Vector2 center = new(current.X + current.Width / 2, current.Y + current.Height / 2);
+        Rect2 focus = FocusBounds(_layout);
+        if (focus.Size == Vector2.Zero) return;
+        Vector2 center = focus.GetCenter();
         _pan = Size / 2 - center * _zoom;
         QueueRedraw();
     }
@@ -260,8 +301,22 @@ internal sealed partial class TimelineMiniGraph : Control
     {
         if (_snapshot == null || Size.X <= 0) return 0.9f;
         _layout = BuildLayout();
-        float fitWidth = (Size.X - 16) / Math.Max(1, _layout.Width);
-        return Math.Clamp(fitWidth, MinReadableZoom, 1f);
+        Rect2 focus = FocusBounds(_layout);
+        float fitWidth = (Size.X - 16) / Math.Max(1, focus.Size.X);
+        float fitHeight = (Size.Y - 16) / Math.Max(1, focus.Size.Y);
+        return Math.Clamp(Math.Min(fitWidth, fitHeight), MinReadableZoom, 1f);
+    }
+
+    private Rect2 FocusBounds(CompactTimelineLayoutResult layout)
+    {
+        CompactTimelineItem[] focusItems = layout.Items.Where(item =>
+            item.Id == layout.CurrentItemId
+            || item.Row?.Node != null && _immediateNextNodeIds.Contains(item.Row.Node.NodeId)).ToArray();
+        if (focusItems.Length == 0) return default;
+        float left = focusItems.Min(item => item.X), top = focusItems.Min(item => item.Y);
+        float right = focusItems.Max(item => item.X + item.Width);
+        float bottom = focusItems.Max(item => item.Y + item.Height);
+        return new Rect2(left - 6, top - 6, right - left + 12, bottom - top + 12);
     }
 
     private static TimelineNodeSnapshot? Find(TimelineNodeSnapshot node, string nodeId)
@@ -305,6 +360,41 @@ internal sealed partial class TimelineMiniGraph : Control
             else high = middle - 1;
         }
         return text[..low] + ellipsis;
+    }
+
+    private static IReadOnlyList<string> WrapText(string text, Font font, float width, int fontSize)
+    {
+        List<string> lines = [];
+        string remaining = text.Trim();
+        while (remaining.Length > 0)
+        {
+            int low = 1, high = remaining.Length, fit = 1;
+            while (low <= high)
+            {
+                int middle = (low + high) / 2;
+                if (MeasureText(remaining[..middle], font, fontSize) <= width)
+                {
+                    fit = middle;
+                    low = middle + 1;
+                }
+                else high = middle - 1;
+            }
+            if (fit < remaining.Length)
+            {
+                int space = remaining.LastIndexOf(' ', fit - 1, fit);
+                if (space > 0) fit = space;
+            }
+            lines.Add(remaining[..fit].TrimEnd());
+            remaining = remaining[fit..].TrimStart();
+        }
+        return lines.Count == 0 ? [""] : lines;
+    }
+
+    private static IEnumerable<MiniTimelineSegment> Flatten(MiniTimelineSegment root)
+    {
+        yield return root;
+        foreach (MiniTimelineSegment child in root.Children)
+        foreach (MiniTimelineSegment descendant in Flatten(child)) yield return descendant;
     }
 
     private sealed record HitArea(Rect2 Rect, string ItemId, string? NodeId, string? MoreBranchesNodeId, string FullText);

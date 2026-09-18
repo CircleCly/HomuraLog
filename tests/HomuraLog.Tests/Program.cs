@@ -92,6 +92,9 @@ Assert(fanoutProjection.Children.Any(child => child.Rows.Any(row => row.Node?.Is
     "The current branch must survive branch capping regardless of recency.");
 Assert(fanoutProjection.Children.Any(child => child.Rows.Any(row => row.Node?.Action?.SourceId == "CARD_7")),
     "Non-current mini branches must be selected by most recent visit.");
+MiniTimelineSegment currentDecisionProjection = MiniTimelineProjector.Create(new TimelineTree(fanoutRecord).Snapshot());
+Assert(currentDecisionProjection.Children.Count == 8 && currentDecisionProjection.HiddenBranchCount == 0,
+    "The current decision must expose every immediate next branch even when it exceeds the normal branch cap.");
 
 CompactTimelineLayoutResult compactFanout = CompactTimelineLayout.Create(
     fanoutProjection, _ => 180, _ => 180);
@@ -114,6 +117,21 @@ int projectedItems = FlattenMini(fanoutProjection).Sum(segment => segment.Rows.C
     + (segment.HiddenBranchCount > 0 ? 1 : 0));
 Assert(compactItems.Length == projectedItems,
     "Compact layout must preserve every projected action, omission, and hidden-branch prompt.");
+CompactTimelineLayoutResult variableHeightLayout = CompactTimelineLayout.Create(
+    currentDecisionProjection, _ => 160, _ => 160,
+    row => row.Node?.Action == null ? CompactTimelineLayout.ItemHeight : 72);
+Assert(variableHeightLayout.Items.Where(item => item.Row?.Node?.Action != null)
+        .All(item => item.Height == 72),
+    "Compact layout must retain the expanded height of fully wrapped immediate actions.");
+CompactTimelineItem[] variableItems = variableHeightLayout.Items.ToArray();
+for (int left = 0; left < variableItems.Length; left++)
+for (int right = left + 1; right < variableItems.Length; right++)
+{
+    CompactTimelineItem a = variableItems[left], b = variableItems[right];
+    bool overlaps = a.X < b.X + b.Width && a.X + a.Width > b.X
+        && a.Y < b.Y + b.Height && a.Y + a.Height > b.Y;
+    Assert(!overlaps, $"Variable-height compact items must not overlap: {a.Id} and {b.Id}.");
+}
 
 LargeWindowBounds hdWindow = LargeWindowGeometry.Default(1920, 1080);
 Assert(hdWindow.Width == 1536 && hdWindow.Height == 810

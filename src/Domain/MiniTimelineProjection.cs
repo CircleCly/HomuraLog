@@ -41,11 +41,12 @@ public static class MiniTimelineProjector
         HashSet<string> mainPath, int descendantDepth, int earlierActions = 0)
     {
         bool isCurrent = segment.Id == currentId;
+        bool currentAtDecision = segment.Nodes[^1].IsCurrent;
         RawSegment? pathChild = segment.Children.FirstOrDefault(child => mainPath.Contains(child.Id));
         IEnumerable<RawSegment> ordered = segment.Children
             .OrderByDescending(child => ReferenceEquals(child, pathChild))
             .ThenByDescending(child => child.Nodes.Max(node => node.LastVisitedAt));
-        RawSegment[] selected = ordered.Take(BranchCap).ToArray();
+        RawSegment[] selected = (currentAtDecision ? ordered : ordered.Take(BranchCap)).ToArray();
         int hidden = Math.Max(0, segment.Children.Count - selected.Length);
         List<MiniTimelineSegment> children = [];
         foreach (RawSegment child in selected)

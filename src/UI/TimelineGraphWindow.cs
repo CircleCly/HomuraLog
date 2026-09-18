@@ -245,10 +245,11 @@ internal sealed partial class TimelineGraphWindow : CanvasLayer
     {
         Vector2 viewport = GetViewport().GetVisibleRect().Size;
         SavedLargeWindowLayout? saved = _layoutStore.Load();
+        LargeWindowBounds? restored = saved?.Resolve(viewport.X, viewport.Y);
         LargeWindowBounds bounds = saved == null
             ? LargeWindowGeometry.Default(viewport.X, viewport.Y)
             : LargeWindowGeometry.Clamp(viewport.X, viewport.Y,
-                saved.X, saved.Y, saved.Width, saved.Height);
+                restored!.X, restored.Y, restored.Width, restored.Height);
         ApplyBounds(bounds);
         Entry.Logger.Info(saved == null
             ? $"Large timeline window using responsive default bounds={bounds}."

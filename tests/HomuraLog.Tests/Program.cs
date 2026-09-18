@@ -141,6 +141,22 @@ Assert(savedLayout.X == 140 && savedLayout.Y == 95
     && savedLayout.Width == 1180 && savedLayout.Height == 690
     && savedLayout.ViewportWidth == 1920 && savedLayout.ViewportHeight == 1080,
     "The manually adjusted large-window position and size must persist exactly.");
+LargeWindowBounds scaledLayout = savedLayout.Resolve(2560, 1440);
+Assert(Math.Abs(scaledLayout.X - 140f / 1920f * 2560f) < 0.01f
+    && Math.Abs(scaledLayout.Y - 95f / 1080f * 1440f) < 0.01f
+    && Math.Abs(scaledLayout.Width - 1180f / 1920f * 2560f) < 0.01f
+    && Math.Abs(scaledLayout.Height - 690f / 1080f * 1440f) < 0.01f,
+    "A saved layout must preserve its visual proportions across resolutions.");
+string legacyLayoutPath = Path.Combine(directory, "legacy-ui-layout.json");
+File.WriteAllText(legacyLayoutPath,
+    """{"schemaVersion":1,"x":192,"y":135,"width":1536,"height":810,"viewportWidth":1920,"viewportHeight":1080,"updatedAt":"2026-09-17T00:00:00Z"}""");
+SavedLargeWindowLayout migratedLayout = new UiLayoutStore(legacyLayoutPath).Load()
+    ?? throw new InvalidOperationException("Version 1 UI layout must migrate.");
+LargeWindowBounds migratedAtQhd = migratedLayout.Resolve(2560, 1440);
+Assert(migratedLayout.SchemaVersion == SavedLargeWindowLayout.CurrentSchemaVersion
+    && Math.Abs(migratedAtQhd.X - 256) < 0.01f && Math.Abs(migratedAtQhd.Y - 180) < 0.01f
+    && Math.Abs(migratedAtQhd.Width - 2048) < 0.01f && Math.Abs(migratedAtQhd.Height - 1080) < 0.01f,
+    "Version 1 pixel layouts must migrate to proportional coordinates.");
 
 var forwardRecord = Record("forward-path");
 var forwardWriter = new TimelineTree(forwardRecord);

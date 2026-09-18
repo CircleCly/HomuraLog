@@ -40,8 +40,17 @@ public static class MiniTimelineProjector
             else if (selected >= start + VisibleBranchCount) start = selected - VisibleBranchCount + 1;
         }
 
+        int firstParentRow = Math.Max(0, path.Count - ParentPreviewCount - 1);
+        if (path[firstParentRow].Action?.Kind == TimelineActionKind.CardChoice)
+        {
+            int context = firstParentRow;
+            while (context > 0 && path[context].Action?.Kind == TimelineActionKind.CardChoice)
+                context--;
+            if (path[context].Action?.Kind == TimelineActionKind.PlayCard)
+                firstParentRow = context;
+        }
         MiniTimelineRow[] parentRows = path
-            .Skip(Math.Max(0, path.Count - ParentPreviewCount - 1))
+            .Skip(firstParentRow)
             .Select(node => new MiniTimelineRow(node, IsFocused: node.NodeId == focus.NodeId))
             .ToArray();
         List<MiniTimelineSegment> children = [];

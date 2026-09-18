@@ -87,6 +87,22 @@ Assert(chainProjection.Root.Rows.Count == 3 && chainProjection.Root.Rows[^1].IsF
 Assert(chainProjection.Root.Children.Count == 1
     && chainProjection.Root.Children[0].Rows.Count == 3,
     "A visible branch must contain its first action and at most two continuation actions.");
+
+var choiceContextRecord = Record("projection-choice-context");
+var choiceContextTree = new TimelineTree(choiceContextRecord);
+TimelineAction choiceTrigger = new(TimelineActionKind.PlayCard, 2, "HOLOGRAM", "11");
+TimelineAction contextualChoice = new(TimelineActionKind.CardChoice, 2, "HOLOGRAM:CHOICE",
+    Choices: ["ALL_FOR_ONE::combat:0::u0"]);
+TimelineAction chosenCard = new(TimelineActionKind.PlayCard, 2, "ALL_FOR_ONE", "0");
+TimelineAction afterChoice = new(TimelineActionKind.PlayCard, 2, "BOOST_AWAY", "9");
+foreach (TimelineAction action in new[] { choiceTrigger, contextualChoice, chosenCard, afterChoice })
+    choiceContextTree.Append(action, state, DateTimeOffset.UtcNow);
+TimelineSnapshot choiceContextSnapshot = choiceContextTree.Snapshot();
+MiniTimelineProjection choiceContextProjection = MiniTimelineProjector.Create(
+    choiceContextSnapshot, choiceContextSnapshot.CurrentNodeId, 0, 0);
+Assert(choiceContextProjection.Root.Rows.Select(row => row.Node?.Action?.SourceId)
+        .SequenceEqual(new[] { "HOLOGRAM", "HOLOGRAM:CHOICE", "ALL_FOR_ONE", "BOOST_AWAY" }),
+    "When the two-step preview begins with a choice, it must also include the card that triggered it.");
 CompactTimelineLayoutResult singleBranchLayout = CompactTimelineLayout.Create(
     chainProjection.Root, _ => 160, _ => 160);
 CompactTimelineItem singleFocus = singleBranchLayout.Items.Single(item => item.Row?.IsFocused == true);
